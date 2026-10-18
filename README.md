@@ -176,3 +176,4 @@ public/
 - Areal thermal capacitance: J/(m²·K)
 - Areal resistance: m²·K/W
 - Heat flux: W/m²
+
