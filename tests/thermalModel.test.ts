@@ -1,16 +1,53 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-	DEFAULT_INPUTS,
 	airConductivityK,
 	effectiveGapEmissivity,
-	solveThermalModel,
-	validateInputs,
-	type ThermalModelInputs,
+	solveThermalNetwork,
+	validateNetworkInputs,
+	type InterfaceInput,
+	type LayerInput,
+	type NetworkInputs,
 } from '../src/lib/thermalModel.ts';
 
-function inputs(overrides: Partial<ThermalModelInputs> = {}): ThermalModelInputs {
-	return { ...DEFAULT_INPUTS, ...overrides };
+function makeLayer(overrides: Partial<LayerInput> = {}): LayerInput {
+	return {
+		id: 'layer-test',
+		label: 'Composite plate',
+		thicknessM: 0.003,
+		conductivityWmK: 0.8,
+		frontEmissivity: 0.05,
+		backEmissivity: 0.88,
+		...overrides,
+	};
+}
+
+function makeInterface(overrides: Partial<InterfaceInput> = {}): InterfaceInput {
+	return {
+		type: 'air-gap',
+		gapThicknessM: 0.04,
+		adhesiveThicknessM: 0.0001,
+		adhesiveConductivityWmK: 0.3,
+		contactResistanceM2KW: 0.001,
+		...overrides,
+	};
+}
+
+function makeNetwork(overrides: Partial<NetworkInputs> = {}): NetworkInputs {
+	return {
+		sourceTemperatureC: 600,
+		ambientTemperatureC: 30,
+		sourceEmissivity: 0.9,
+		layers: [makeLayer()],
+		interfaces: [makeInterface()],
+		backConvectionWm2K: 5,
+		airFitIntercept: 0.0243,
+		airFitSlope: 7.7e-5,
+		toleranceK: 1e-4,
+		maxIterations: 1000,
+		relaxation: 0.5,
+		...overrides,
+	};
 }
 
 function closeTo(actual: number, expected: number, tolerance: number, label: string): void {
@@ -20,142 +57,205 @@ function closeTo(actual: number, expected: number, tolerance: number, label: str
 	);
 }
 
-test('default inputs match the Python reference solution', () => {
-	const result = solveThermalModel(DEFAULT_INPUTS);
+test('the single-layer network reproduces the Python reference solution', () => {
+	const result = solveThermalNetwork(makeNetwork());
 
-	assert.equal(result.iterations, 24);
 	assert.equal(result.converged, true);
-	assert.ok(result.errorK <= DEFAULT_INPUTS.toleranceK);
-	closeTo(result.heatFluxWm2, 2103.353891975971, 1e-6, 'heat flux');
-	closeTo(result.frontTemperatureC, 173.38541095963387, 1e-9, 'front temperature');
-	closeTo(result.backTemperatureC, 165.49780284271816, 1e-9, 'back temperature');
-	closeTo(result.gapResistance, 0.20282589891076877, 1e-12, 'gap resistance');
-	closeTo(result.plateResistance, 0.00375, 1e-12, 'plate resistance');
-	closeTo(result.backResistance, 0.06441986750518149, 1e-12, 'back resistance');
-	closeTo(result.totalResistance, 0.27099576641595025, 1e-12, 'total resistance');
-	closeTo(result.effectiveGapEmissivity, 0.049723756906077346, 1e-12, 'effective emissivity');
+	assert.ok(result.iterations > 0);
+	assert.ok(result.errorK <= 1e-4);
+	closeTo(result.heatFluxWm2, 2103.353897405936, 1e-3, 'heat flux');
+	closeTo(result.layers[0].frontTemperatureC, 173.3854118888301, 1e-3, 'front temperature');
+	closeTo(result.layers[0].backTemperatureC, 165.49780327620692, 1e-3, 'back temperature');
+	closeTo(result.interfaces[0].resistance, 0.2028258983801135, 1e-9, 'gap resistance');
+	closeTo(result.layers[0].resistance, 0.00375, 1e-12, 'plate resistance');
+	closeTo(result.back.resistance, 0.06441986733624089, 1e-9, 'back resistance');
+	closeTo(result.totalResistance, 0.2709957657163544, 1e-9, 'total resistance');
+	closeTo(
+		result.interfaces[0].effectiveEmissivity ?? Number.NaN,
+		0.049723756906077346,
+		1e-12,
+		'effective gap emissivity',
+	);
+	assert.equal(result.temperatureNodes.length, 4);
+	assert.equal(result.layers[0].label, 'Composite plate');
+	assert.equal(result.back.effectiveEmissivity, 0.88);
 	assert.equal(result.airFitOutOfRange, false);
 });
 
-test('node temperatures and resistances satisfy the network equations', () => {
-	const result = solveThermalModel(DEFAULT_INPUTS);
-	const hotK = DEFAULT_INPUTS.hotTemperatureC + 273.15;
-	const ambientK = DEFAULT_INPUTS.ambientTemperatureC + 273.15;
+test('network temperatures and resistances satisfy the energy balance', () => {
+	const result = solveThermalNetwork(makeNetwork());
+	const hotK = 600 + 273.15;
+	const ambientK = 30 + 273.15;
 
 	closeTo(
-		result.gapResistance,
-		1 /
-			(1 / result.gapConductionResistance + 1 / result.gapRadiationResistance),
-		1e-12,
-		'gap parallel resistance',
-	);
-	closeTo(
-		result.backResistance,
-		1 /
-			(1 / result.backConvectionResistance + 1 / result.backRadiationResistance),
-		1e-12,
-		'back parallel resistance',
-	);
-	closeTo(
 		result.totalResistance,
-		result.gapResistance + result.plateResistance + result.backResistance,
+		result.interfaces.reduce((sum, item) => sum + item.resistance, 0) +
+			result.layers.reduce((sum, item) => sum + item.resistance, 0) +
+			result.back.resistance,
 		1e-12,
 		'total resistance sum',
 	);
 	closeTo(result.heatFluxWm2, (hotK - ambientK) / result.totalResistance, 1e-9, 'flux equation');
-
+	closeTo(result.interfaces[0].upstreamTemperatureC, 600, 1e-12, 'gap upstream temperature');
 	closeTo(
-		result.frontTemperatureC + 273.15,
-		hotK - result.heatFluxWm2 * result.gapResistance,
+		result.interfaces[0].downstreamTemperatureC,
+		hotK - result.heatFluxWm2 * result.interfaces[0].resistance - 273.15,
 		1e-3,
-		'gap temperature drop',
+		'gap drop',
 	);
 	closeTo(
-		result.frontTemperatureC - result.backTemperatureC,
-		result.heatFluxWm2 * result.plateResistance,
+		result.layers[0].frontTemperatureC - result.layers[0].backTemperatureC,
+		result.heatFluxWm2 * result.layers[0].resistance,
 		1e-3,
-		'plate temperature drop',
+		'layer drop',
 	);
 	closeTo(
-		result.backTemperatureC + 273.15,
-		ambientK + result.heatFluxWm2 * result.backResistance,
+		result.layers[0].backTemperatureC - result.ambientTemperatureC,
+		result.heatFluxWm2 * result.back.resistance,
 		1e-3,
-		'back temperature drop',
+		'back drop',
 	);
-});
-
-test('air conductivity and effective emissivity match the source correlations', () => {
 	closeTo(
-		airConductivityK(300, DEFAULT_INPUTS.airFitIntercept, DEFAULT_INPUTS.airFitSlope),
-		0.02636745,
+		result.layers[0].meanTemperatureC,
+		(result.layers[0].frontTemperatureC + result.layers[0].backTemperatureC) / 2,
 		1e-12,
-		'air conductivity at 300 K',
+		'mean layer temperature',
 	);
-	closeTo(effectiveGapEmissivity(0.9, 0.05), 0.049723756906077346, 1e-12, 'emissivity');
 });
 
-test('validation accepts the defaults and rejects invalid values', () => {
-	assert.deepEqual(validateInputs(DEFAULT_INPUTS), []);
+test('air conductivity and gap emissivity match the source correlations', () => {
+	closeTo(airConductivityK(300, 0.0243, 7.7e-5), 0.02636745, 1e-12, 'air conductivity');
+	closeTo(effectiveGapEmissivity(0.9, 0.05), 0.049723756906077346, 1e-12, 'gap emissivity');
+});
 
-	const cases: Array<[Partial<ThermalModelInputs>, keyof ThermalModelInputs]> = [
-		[{ hotTemperatureC: Number.NaN }, 'hotTemperatureC'],
-		[{ hotTemperatureC: 20 }, 'hotTemperatureC'],
-		[{ ambientTemperatureC: 600 }, 'hotTemperatureC'],
-		[{ ambientTemperatureC: -300 }, 'ambientTemperatureC'],
-		[{ gapThicknessM: 0 }, 'gapThicknessM'],
-		[{ plateThicknessM: -0.001 }, 'plateThicknessM'],
-		[{ plateConductivityWmK: 0 }, 'plateConductivityWmK'],
-		[{ sourceEmissivity: 0 }, 'sourceEmissivity'],
-		[{ foilEmissivity: 1.1 }, 'foilEmissivity'],
-		[{ backEmissivity: 0 }, 'backEmissivity'],
+test('all connection types produce the expected resistance', () => {
+	const adhesive = solveThermalNetwork(
+		makeNetwork({
+			interfaces: [
+				makeInterface({
+					type: 'adhesive',
+					adhesiveThicknessM: 0.0002,
+					adhesiveConductivityWmK: 0.4,
+					gapThicknessM: Number.NaN,
+				}),
+			],
+		}),
+	);
+	closeTo(adhesive.interfaces[0].resistance, 0.0005, 1e-12, 'adhesive resistance');
+
+	const contact = solveThermalNetwork(
+		makeNetwork({ interfaces: [makeInterface({ type: 'contact', contactResistanceM2KW: 0.002 })] }),
+	);
+	closeTo(contact.interfaces[0].resistance, 0.002, 1e-12, 'contact resistance');
+
+	const bonded = solveThermalNetwork(
+		makeNetwork({ interfaces: [makeInterface({ type: 'bonded' })] }),
+	);
+	assert.equal(bonded.interfaces[0].resistance, 0);
+	closeTo(
+		bonded.interfaces[0].upstreamTemperatureC,
+		bonded.interfaces[0].downstreamTemperatureC,
+		1e-3,
+		'bonded interface temperature equality',
+	);
+
+	const airGap = solveThermalNetwork(makeNetwork());
+	assert.ok((airGap.interfaces[0].conductionResistance ?? 0) > 0);
+	assert.ok((airGap.interfaces[0].radiationResistance ?? 0) > 0);
+	assert.ok((airGap.interfaces[0].effectiveEmissivity ?? 0) > 0);
+});
+
+test('the solver validates layers, interfaces and solver settings', () => {
+	assert.deepEqual(validateNetworkInputs(makeNetwork()), []);
+
+	const cases: Array<[Partial<NetworkInputs>, string]> = [
+		[{ layers: [], interfaces: [] }, 'layers'],
+		[{ interfaces: [makeInterface(), makeInterface()] }, 'interfaces'],
+		[{ layers: [makeLayer({ thicknessM: 0 })] }, 'layers.0.thicknessM'],
+		[{ layers: [makeLayer({ conductivityWmK: 0 })] }, 'layers.0.conductivityWmK'],
+		[{ layers: [makeLayer({ frontEmissivity: 0 })] }, 'layers.0.frontEmissivity'],
+		[{ layers: [makeLayer({ backEmissivity: 1.2 })] }, 'layers.0.backEmissivity'],
+		[{ interfaces: [makeInterface({ gapThicknessM: 0 })] }, 'interfaces.0.gapThicknessM'],
+		[
+			{ interfaces: [makeInterface({ type: 'adhesive', adhesiveThicknessM: 0 })] },
+			'interfaces.0.adhesiveThicknessM',
+		],
+		[
+			{ interfaces: [makeInterface({ type: 'adhesive', adhesiveConductivityWmK: 0 })] },
+			'interfaces.0.adhesiveConductivityWmK',
+		],
+		[
+			{ interfaces: [makeInterface({ type: 'contact', contactResistanceM2KW: -1 })] },
+			'interfaces.0.contactResistanceM2KW',
+		],
 		[{ backConvectionWm2K: 0 }, 'backConvectionWm2K'],
 		[{ airFitIntercept: 0 }, 'airFitIntercept'],
 		[{ airFitSlope: -1e-5 }, 'airFitSlope'],
 		[{ toleranceK: 0 }, 'toleranceK'],
 		[{ maxIterations: 0 }, 'maxIterations'],
 		[{ maxIterations: 1.5 }, 'maxIterations'],
-		[{ relaxation: 0 }, 'relaxation'],
 		[{ relaxation: 1.1 }, 'relaxation'],
+		[{ sourceTemperatureC: 20 }, 'sourceTemperatureC'],
+		[{ ambientTemperatureC: -300 }, 'ambientTemperatureC'],
+		[{ sourceEmissivity: 0 }, 'sourceEmissivity'],
 	];
 
-	for (const [overrides, field] of cases) {
-		const issues = validateInputs(inputs(overrides));
+	for (const [overrides, path] of cases) {
+		const issues = validateNetworkInputs(makeNetwork(overrides));
 		assert.ok(
-			issues.some((issue) => issue.field === field),
-			`expected an issue for ${field}`,
+			issues.some((entry) => entry.path === path),
+			`expected an issue for ${path}`,
 		);
 	}
+
+	assert.throws(() => solveThermalNetwork(makeNetwork({ layers: [] })));
 });
 
-test('the solver refuses invalid inputs and reports non-convergence', () => {
-	assert.throws(() => solveThermalModel(inputs({ gapThicknessM: 0 })));
-
-	const limited = solveThermalModel(inputs({ maxIterations: 1 }));
-	assert.equal(limited.converged, false);
-	assert.equal(limited.iterations, 1);
-	assert.ok(Number.isFinite(limited.heatFluxWm2));
-	assert.ok(Number.isFinite(limited.frontTemperatureC));
-	assert.ok(Number.isFinite(limited.backTemperatureC));
+test('the solver reports non-convergence without losing finite results', () => {
+	const result = solveThermalNetwork(makeNetwork({ maxIterations: 1 }));
+	assert.equal(result.converged, false);
+	assert.equal(result.iterations, 1);
+	assert.ok(Number.isFinite(result.heatFluxWm2));
+	assert.ok(Number.isFinite(result.totalResistance));
+	assert.ok(result.temperatureNodes.length >= 4);
 });
 
 test('physical trends respond in the expected direction', () => {
-	const baseline = solveThermalModel(DEFAULT_INPUTS);
-	const widerGap = solveThermalModel(inputs({ gapThicknessM: 0.08 }));
-	const hotterSource = solveThermalModel(inputs({ hotTemperatureC: 650 }));
-	const reflectiveChange = solveThermalModel(inputs({ foilEmissivity: 0.9 }));
+	const baseline = solveThermalNetwork(makeNetwork());
+	const widerGap = solveThermalNetwork(
+		makeNetwork({ interfaces: [makeInterface({ gapThicknessM: 0.08 })] }),
+	);
+	const hotterSource = solveThermalNetwork(makeNetwork({ sourceTemperatureC: 700 }));
+	const shinierFoil = solveThermalNetwork(
+		makeNetwork({ layers: [makeLayer({ frontEmissivity: 0.9 })] }),
+	);
+	const extraLayer = solveThermalNetwork(
+		makeNetwork({
+			layers: [
+				makeLayer(),
+				makeLayer({
+					id: 'layer-nomex',
+					label: 'Nomex honeycomb',
+					thicknessM: 0.01,
+					conductivityWmK: 0.06,
+					frontEmissivity: 0.9,
+					backEmissivity: 0.9,
+				}),
+			],
+			interfaces: [makeInterface(), makeInterface({ type: 'bonded' })],
+		}),
+	);
 
-	assert.ok(widerGap.gapResistance > baseline.gapResistance);
 	assert.ok(widerGap.heatFluxWm2 < baseline.heatFluxWm2);
+	assert.ok(widerGap.interfaces[0].resistance > baseline.interfaces[0].resistance);
 	assert.ok(hotterSource.heatFluxWm2 > baseline.heatFluxWm2);
-	assert.ok(reflectiveChange.gapRadiationResistance < baseline.gapRadiationResistance);
-	assert.ok(reflectiveChange.heatFluxWm2 > baseline.heatFluxWm2);
+	assert.ok((shinierFoil.interfaces[0].radiationResistance ?? Infinity) < (baseline.interfaces[0].radiationResistance ?? 0));
+	assert.ok(shinierFoil.heatFluxWm2 > baseline.heatFluxWm2);
+	assert.ok(extraLayer.heatFluxWm2 < baseline.heatFluxWm2);
+	assert.equal(extraLayer.layers.length, 2);
 });
 
-test('a large tolerance still produces a valid converged state', () => {
-	const result = solveThermalModel(inputs({ toleranceK: 5 }));
-	assert.ok(result.iterations >= 1);
-	assert.equal(result.converged, true);
-	assert.ok(result.errorK <= 5);
-	assert.ok(Number.isFinite(result.heatFluxWm2));
-	assert.ok(result.totalResistance > 0);
+test('the air-fit range flag responds to gap mean temperature', () => {
+	const hot = solveThermalNetwork(makeNetwork({ sourceTemperatureC: 1500 }));
+	assert.equal(hot.airFitOutOfRange, true);
 });

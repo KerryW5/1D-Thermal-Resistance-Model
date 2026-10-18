@@ -1,45 +1,78 @@
-# 1D Thermal Resistance Calculator
+# 1D Thermal Network Calculator
 
-A static, client-side web calculator for the steady-state 1D thermal resistance network in
-`source_model/model.py`. It predicts heat flux and the foil-face/composite-back temperatures for a
-heat source separated from a composite plate by a stagnant air gap.
+A static, client-side calculator for steady-state heat transfer through a configurable series
+network of materials and interfaces.
 
-The calculator runs entirely in the browser. There is no API, database, or server runtime, so the
-built site can be hosted on any static file host.
+The original Python model is preserved in `source_model/model.py`. The web app generalises it into a
+node-based stack: a heat source, any number of material layers, and an ambient sink. Every connection
+between nodes can be an air gap, a bonded contact, an adhesive layer, or a specified contact
+resistance.
+
+All calculation happens in the browser. There is no API, database, or server runtime, so the built
+site can be hosted on any static file host.
 
 ## Features
 
-- Live calculation while editing inputs
-- Conduction, linearised radiation and natural convection
-- Air-gap and back-surface radiation treated as parallel resistances
-- Detailed resistance breakdown, temperature profile chart and convergence status
-- Core inputs visible, with optical properties and solver settings under **Advanced settings**
-- Source-model defaults reproduced exactly
-- Accessible, responsive light/dark UI
-- No runtime dependencies beyond Astro
+- Add, remove and reorder material layers
+- Material presets for carbon fibre, Nomex honeycomb, glass fibre, aluminium, stainless steel, aerogel and custom materials
+- Connection types: air gap, bonded, adhesive layer and contact resistance
+- Per-side surface finishes: bare material, reflective foil or custom emissivity
+- Air-gap conduction in parallel with linearised radiation
+- Back-surface convection and radiation at the ambient boundary
+- Live heat flux, node temperatures, resistance breakdown and temperature-profile chart
+- Convergence status and air-fit range warning
+- Network templates, including the original single-layer Python benchmark
+- Accessible, responsive light/dark UI with no runtime dependencies beyond Astro
 
-## Model defaults
+## Default example
 
-| Parameter | Default |
-| --- | ---: |
-| Heat source temperature, `T_hot` | 600 °C |
-| Ambient temperature, `T_inf` | 30 °C |
-| Air gap thickness | 40 mm |
-| Composite plate thickness | 3 mm |
-| Plate through-thickness conductivity | 0.8 W/(m·K) |
-| Source / foil / back emissivity | 0.90 / 0.05 / 0.88 |
-| Back-surface convection coefficient | 5.0 W/(m²·K) |
-| Air conductivity fit | `0.0243 + 7.7e-5 · T[°C]` |
-| Solver tolerance / max iterations / relaxation | `1e-4 K` / `1000` / `0.5` |
+The app opens with the **Carbon fibre + Nomex example**:
 
-With these defaults the model gives approximately:
+1. Node 1 — heat source at 600 °C
+2. 40 mm air gap
+3. Node 2 — carbon fibre plate, 3 mm, `k = 0.8 W/(m·K)`, reflective foil on the front face
+4. Bonded connection
+5. Node 3 — Nomex honeycomb, 10 mm, `k = 0.06 W/(m·K)`
+6. Ambient boundary at 30 °C with `h_conv = 5 W/(m²·K)`
+
+Approximate default result:
+
+- Heat flux: `1460.84 W/m²`
+- Carbon fibre front/back: `381.32 / 375.84 °C`
+- Nomex front/back: `375.84 / 132.37 °C`
+- Total resistance: `0.3902 m²·K/W`
+
+The **Source model · 1 layer** template reproduces the original Python benchmark:
 
 - Heat flux: `2103.35 W/m²`
 - Foil-face temperature `T1`: `173.39 °C`
 - Composite-back temperature `T2`: `165.50 °C`
-- Convergence: 24 iterations
+- Total resistance: `0.2710 m²·K/W`
 
-The ambient temperature is used consistently at the back boundary and in back-surface radiation.
+## Model notes
+
+The network contains four kinds of elements in series:
+
+| Element | Resistance |
+| --- | --- |
+| Material layer | `R″ = L / k` |
+| Air gap | Stagnant-air conduction in parallel with radiation |
+| Bonded connection | `R″ = 0` |
+| Adhesive layer | `R″ = L_adhesive / k_adhesive` |
+| Contact resistance | User-specified `R″` |
+| Ambient boundary | Convection in parallel with radiation |
+
+Radiation is linearised between infinite parallel plates. The effective emissivity of an air gap is
+calculated from the facing surface finishes. A surface set to **Bare** uses the material emissivity,
+**Reflective foil** uses the global foil emissivity, and **Custom ε** uses the entered value.
+
+Other assumptions:
+
+- Steady-state, one-dimensional heat transfer with uniform heat flux
+- Constant material conductivity
+- No contact resistance for bonded connections
+- Air conductivity uses the linear fit `k_air = 0.0243 + 7.7e-5 · T[°C]`, intended for roughly 300–900 K
+- Damped fixed-point iteration solves the temperature-dependent resistances
 
 ## Development
 
@@ -59,7 +92,7 @@ Available scripts:
 | `npm run dev` | Start the local Astro dev server |
 | `npm run build` | Build the static site to `dist/` |
 | `npm run preview` | Preview the production build locally |
-| `npm test` | Run the model unit tests |
+| `npm test` | Run the model and configuration tests |
 | `npm run check` | Run Astro/TypeScript diagnostics |
 
 ## Static deployment
@@ -79,29 +112,29 @@ If the site will be served from a subpath, configure Astro's
 
 ```text
 source_model/
-  model.py            Reference Python implementation
-  model.md            Model notes and equations
+  model.py              Reference Python implementation
+  model.md              Original model notes and equations
 src/
   components/
-    Calculator.astro  Calculator UI and client-side interaction
+    Calculator.astro    Node-chain editor, results UI and client-side interaction
   layouts/
-    Layout.astro      Page shell and design tokens
+    Layout.astro        Page shell and design tokens
   lib/
-    thermalModel.ts   Typed model port, defaults and validation
+    thermalModel.ts     Generalised series-network solver and validation
+    networkConfig.ts    Materials, templates, surface finishes and UI-state validation
   pages/
-    index.astro       Single-page calculator route
+    index.astro         Single-page calculator route
 tests/
-  thermalModel.test.ts
+  thermalModel.test.ts  Solver benchmarks and physics tests
+  networkConfig.test.ts Templates, surfaces and configuration validation
 public/
   favicon.svg
 ```
 
-## Model notes
+## Units
 
-The network has four temperature nodes: source, foil face, composite back and ambient. The solver
-uses damped fixed-point iteration because air conductivity and the linearised radiation coefficients
-depend on the unknown node temperatures.
-
-Assumptions include steady-state 1D heat transfer, constant plate conductivity and back convection
-coefficient, radiation between infinite parallel plates, and the linear air conductivity fit intended
-for roughly 300–900 K. Results are reported per unit area.
+- Temperatures: °C
+- Lengths in inputs: mm
+- Conductivity: W/(m·K)
+- Areal resistance: m²·K/W
+- Heat flux: W/m²

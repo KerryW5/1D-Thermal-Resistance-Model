@@ -9,7 +9,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "test": "node --test tests/thermalModel.test.ts",
+    "test": "node --test tests/thermalModel.test.ts tests/networkConfig.test.ts",
     "check": "astro check",
     "astro": "astro"
   },

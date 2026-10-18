@@ -1,8 +1,11 @@
 ---
-import { DEFAULT_INPUTS } from '../lib/thermalModel';
+import {
+	ADVANCED_DEFAULTS,
+	DEFAULT_TEMPLATE_ID,
+	NETWORK_TEMPLATES,
+} from '../lib/networkConfig.ts';
 
-const gapMillimetres = DEFAULT_INPUTS.gapThicknessM * 1000;
-const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
+const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEFAULT_TEMPLATE_ID);
 ---
 
 <section class="thermal-app" id="thermal-calculator">
@@ -32,283 +35,132 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 					</defs>
 				</svg>
 			</span>
-			<span class="eyebrow">Steady-state · per unit area</span>
+			<span class="eyebrow">Series thermal network · per unit area</span>
 		</div>
-		<h1>1D Thermal Resistance Calculator</h1>
+		<h1>1D Thermal Network Calculator</h1>
 		<p class="lede">
-			Estimate heat flux and surface temperatures through a stagnant air gap and composite plate,
-			combining conduction, linearised radiation and natural convection.
+			Build a chain of materials, air gaps, bonds and surface finishes. The calculator solves the
+			steady-state temperature at every interface and the heat flux through the whole stack.
 		</p>
 		<ul class="feature-tags" aria-label="Calculator features">
-			<li>4-node network</li>
-			<li>Live results</li>
+			<li>Node-based stack</li>
+			<li>Air gaps, bonds &amp; adhesive</li>
+			<li>Reflective surfaces</li>
 			<li>Runs locally</li>
 		</ul>
 	</header>
 
 	<div class="calculator-grid">
-		<form class="panel inputs-panel" id="model-form" novalidate>
+		<form class="panel inputs-panel" id="network-form" novalidate>
 			<div class="panel-heading">
 				<div>
-					<h2>Inputs</h2>
-					<p class="panel-subtitle">Source-model defaults</p>
+					<h2>Network setup</h2>
+					<p class="panel-subtitle">Source, material layers and ambient sink</p>
 				</div>
-				<span class="panel-badge">Metric units</span>
+				<span class="panel-badge">Series</span>
 			</div>
 
-			<p class="panel-note">
-				Defaults reproduce <code>source_model/model.py</code>. Change any value to recalculate
-				instantly.
-			</p>
-
-			<fieldset class="input-group">
-				<legend>Operating conditions</legend>
-				<div class="field-grid">
-					<div class="field">
-						<div class="field-label-row">
-							<label for="hotTemperatureC">Heat source temperature</label>
-							<span class="unit">°C</span>
-						</div>
-						<input
-							id="hotTemperatureC"
-							name="hotTemperatureC"
-							type="number"
-							value={DEFAULT_INPUTS.hotTemperatureC}
-							step="1"
-							min="-273.14"
-							inputmode="decimal"
-							aria-describedby="help-hotTemperatureC"
-							required
-						/>
-						<p class="field-help" id="help-hotTemperatureC">Boundary node 0, T<sub>hot</sub>.</p>
+			<div class="template-bar">
+				<div class="field">
+					<div class="field-label-row">
+						<label for="template-select">Network template</label>
+						<span class="unit">preset</span>
 					</div>
-
-					<div class="field">
-						<div class="field-label-row">
-							<label for="ambientTemperatureC">Ambient temperature</label>
-							<span class="unit">°C</span>
-						</div>
-						<input
-							id="ambientTemperatureC"
-							name="ambientTemperatureC"
-							type="number"
-							value={DEFAULT_INPUTS.ambientTemperatureC}
-							step="1"
-							min="-273.14"
-							inputmode="decimal"
-							aria-describedby="help-ambientTemperatureC"
-							required
-						/>
-						<p class="field-help" id="help-ambientTemperatureC">
-							Back boundary, T<sub>∞</sub>.
-						</p>
-					</div>
+					<select id="template-select">
+						{NETWORK_TEMPLATES.map((template) => (
+							<option value={template.id} selected={template.id === DEFAULT_TEMPLATE_ID}>
+								{template.name}
+							</option>
+						))}
+						<option value="custom">Custom network</option>
+					</select>
 				</div>
-			</fieldset>
+				<p class="template-description" id="template-description">
+					{defaultTemplate?.description}
+				</p>
+			</div>
 
-			<fieldset class="input-group">
-				<legend>Geometry &amp; material</legend>
-				<div class="field-grid">
-					<div class="field">
-						<div class="field-label-row">
-							<label for="gapThicknessMm">Air gap thickness</label>
-							<span class="unit">mm</span>
-						</div>
-						<input
-							id="gapThicknessMm"
-							name="gapThicknessMm"
-							type="number"
-							value={gapMillimetres}
-							step="0.1"
-							min="0.001"
-							inputmode="decimal"
-							aria-describedby="help-gapThicknessMm"
-							required
-						/>
-						<p class="field-help" id="help-gapThicknessMm">Stagnant air gap, L<sub>gap</sub>.</p>
-					</div>
-
-					<div class="field">
-						<div class="field-label-row">
-							<label for="plateThicknessMm">Plate thickness</label>
-							<span class="unit">mm</span>
-						</div>
-						<input
-							id="plateThicknessMm"
-							name="plateThicknessMm"
-							type="number"
-							value={plateMillimetres}
-							step="0.1"
-							min="0.001"
-							inputmode="decimal"
-							aria-describedby="help-plateThicknessMm"
-							required
-						/>
-						<p class="field-help" id="help-plateThicknessMm">Composite plate, L<sub>plate</sub>.</p>
-					</div>
-
-					<div class="field field-span-full">
-						<div class="field-label-row">
-							<label for="plateConductivityWmK">Plate through-thickness conductivity</label>
-							<span class="unit">W/(m·K)</span>
-						</div>
-						<input
-							id="plateConductivityWmK"
-							name="plateConductivityWmK"
-							type="number"
-							value={DEFAULT_INPUTS.plateConductivityWmK}
-							step="0.01"
-							min="0.000001"
-							inputmode="decimal"
-							aria-describedby="help-plateConductivityWmK"
-							required
-						/>
-						<p class="field-help" id="help-plateConductivityWmK">
-							Constant through-thickness conductivity, k<sub>plate</sub>.
-						</p>
-					</div>
-				</div>
-			</fieldset>
+			<div
+				class="chain"
+				id="chain-container"
+				role="group"
+				aria-label="Series thermal network nodes"
+			>
+				<div class="chain-loading">Building network…</div>
+			</div>
 
 			<details class="advanced" id="advanced-settings">
 				<summary>
 					<span class="summary-title">Advanced settings</span>
-					<span class="summary-hint">Optics, air fit, solver</span>
+					<span class="summary-hint">Foil optics, air fit, solver</span>
 					<span class="chevron" aria-hidden="true"></span>
 				</summary>
 
 				<div class="advanced-body">
 					<fieldset class="input-group">
-						<legend>Surface &amp; optical properties</legend>
+						<legend>Surface &amp; air properties</legend>
 						<div class="field-grid">
 							<div class="field">
 								<div class="field-label-row">
-									<label for="sourceEmissivity">Source emissivity</label>
-									<span class="unit">ε<sub>1</sub></span>
-								</div>
-								<input
-									id="sourceEmissivity"
-									name="sourceEmissivity"
-									type="number"
-									value={DEFAULT_INPUTS.sourceEmissivity}
-									step="0.01"
-									min="0.001"
-									max="1"
-									inputmode="decimal"
-									aria-describedby="help-sourceEmissivity"
-									required
-								/>
-								<p class="field-help" id="help-sourceEmissivity">Heat-source surface.</p>
-							</div>
-
-							<div class="field">
-								<div class="field-label-row">
-									<label for="foilEmissivity">Foil emissivity</label>
+									<label for="foilEmissivity">Reflective foil emissivity</label>
 									<span class="unit">ε<sub>foil</sub></span>
 								</div>
 								<input
 									id="foilEmissivity"
-									name="foilEmissivity"
+									data-path="foilEmissivity"
 									type="number"
-									value={DEFAULT_INPUTS.foilEmissivity}
+									value={ADVANCED_DEFAULTS.foilEmissivity}
 									step="0.01"
 									min="0.001"
 									max="1"
 									inputmode="decimal"
 									aria-describedby="help-foilEmissivity"
-									required
 								/>
-								<p class="field-help" id="help-foilEmissivity">Reflective foil face.</p>
-							</div>
-
-							<div class="field">
-								<div class="field-label-row">
-									<label for="backEmissivity">Back-surface emissivity</label>
-									<span class="unit">ε<sub>back</sub></span>
-								</div>
-								<input
-									id="backEmissivity"
-									name="backEmissivity"
-									type="number"
-									value={DEFAULT_INPUTS.backEmissivity}
-									step="0.01"
-									min="0.001"
-									max="1"
-									inputmode="decimal"
-									aria-describedby="help-backEmissivity"
-									required
-								/>
-								<p class="field-help" id="help-backEmissivity">Composite rear face.</p>
-							</div>
-
-							<div class="field">
-								<div class="field-label-row">
-									<label for="backConvectionWm2K">Back convection coefficient</label>
-									<span class="unit">W/(m²·K)</span>
-								</div>
-								<input
-									id="backConvectionWm2K"
-									name="backConvectionWm2K"
-									type="number"
-									value={DEFAULT_INPUTS.backConvectionWm2K}
-									step="0.1"
-									min="0.000001"
-									inputmode="decimal"
-									aria-describedby="help-backConvectionWm2K"
-									required
-								/>
-								<p class="field-help" id="help-backConvectionWm2K">
-									Natural convection, h<sub>back</sub>.
+								<p class="field-help" id="help-foilEmissivity">
+									Used wherever a surface finish is set to reflective foil.
 								</p>
 							</div>
-						</div>
-					</fieldset>
 
-					<fieldset class="input-group">
-						<legend>Air conductivity fit</legend>
-						<div class="field-grid">
 							<div class="field">
 								<div class="field-label-row">
-									<label for="airFitIntercept">Intercept</label>
+									<label for="airFitIntercept">Air-fit intercept</label>
 									<span class="unit">W/(m·K)</span>
 								</div>
 								<input
 									id="airFitIntercept"
-									name="airFitIntercept"
+									data-path="airFitIntercept"
 									type="number"
-									value={DEFAULT_INPUTS.airFitIntercept}
+									value={ADVANCED_DEFAULTS.airFitIntercept}
 									step="0.0001"
 									min="0.000001"
 									inputmode="decimal"
 									aria-describedby="help-airFitIntercept"
-									required
 								/>
-								<p class="field-help" id="help-airFitIntercept">Constant term in the air fit.</p>
+								<p class="field-help" id="help-airFitIntercept">
+									k<sub>air</sub> = intercept + slope · T[°C].
+								</p>
 							</div>
 
 							<div class="field">
 								<div class="field-label-row">
-									<label for="airFitSlope">Slope</label>
+									<label for="airFitSlope">Air-fit slope</label>
 									<span class="unit">W/(m·K·°C)</span>
 								</div>
 								<input
 									id="airFitSlope"
-									name="airFitSlope"
+									data-path="airFitSlope"
 									type="number"
-									value={DEFAULT_INPUTS.airFitSlope}
+									value={ADVANCED_DEFAULTS.airFitSlope}
 									step="0.000001"
 									min="0"
 									inputmode="decimal"
 									aria-describedby="help-airFitSlope"
-									required
 								/>
-								<p class="field-help" id="help-airFitSlope">Temperature coefficient.</p>
+								<p class="field-help" id="help-airFitSlope">
+									The source fit is intended for roughly 300–900 K.
+								</p>
 							</div>
 						</div>
-						<p class="fit-note">
-							k<sub>air</sub> = intercept + slope · T[°C]. The source fit is intended for roughly
-							300–900 K.
-						</p>
 					</fieldset>
 
 					<fieldset class="input-group">
@@ -321,16 +173,17 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 								</div>
 								<input
 									id="toleranceK"
-									name="toleranceK"
+									data-path="toleranceK"
 									type="number"
-									value={DEFAULT_INPUTS.toleranceK}
+									value={ADVANCED_DEFAULTS.toleranceK}
 									step="any"
 									min="0.000000001"
 									inputmode="decimal"
 									aria-describedby="help-toleranceK"
-									required
 								/>
-								<p class="field-help" id="help-toleranceK">Maximum node-temperature change.</p>
+								<p class="field-help" id="help-toleranceK">
+									Maximum node-temperature change between iterations.
+								</p>
 							</div>
 
 							<div class="field">
@@ -340,17 +193,18 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 								</div>
 								<input
 									id="maxIterations"
-									name="maxIterations"
+									data-path="maxIterations"
 									type="number"
-									value={DEFAULT_INPUTS.maxIterations}
+									value={ADVANCED_DEFAULTS.maxIterations}
 									step="1"
 									min="1"
 									max="100000"
 									inputmode="numeric"
 									aria-describedby="help-maxIterations"
-									required
 								/>
-								<p class="field-help" id="help-maxIterations">Upper limit for the fixed-point loop.</p>
+								<p class="field-help" id="help-maxIterations">
+									Upper limit for the fixed-point loop.
+								</p>
 							</div>
 
 							<div class="field">
@@ -360,24 +214,21 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 								</div>
 								<input
 									id="relaxation"
-									name="relaxation"
+									data-path="relaxation"
 									type="number"
-									value={DEFAULT_INPUTS.relaxation}
-									step="0.05"
+									value={ADVANCED_DEFAULTS.relaxation}
+									step="0.01"
 									min="0.01"
 									max="1"
 									inputmode="decimal"
 									aria-describedby="help-relaxation"
-									required
 								/>
-								<p class="field-help" id="help-relaxation">Damping applied to temperature updates.</p>
+								<p class="field-help" id="help-relaxation">
+									Damping applied to temperature updates.
+								</p>
 							</div>
 						</div>
 					</fieldset>
-
-					<p class="computed-note">
-						Computed gap emissivity ε<sub>eff</sub> = <strong id="eps-eff-inline">—</strong>
-					</p>
 				</div>
 			</details>
 
@@ -385,7 +236,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 				<button class="button button-primary" type="button" id="copy-button" disabled>
 					Copy results
 				</button>
-				<button class="button button-ghost" type="reset">Reset defaults</button>
+				<button class="button button-ghost" type="button" id="reset-button">Reset demo</button>
 			</div>
 
 			<p class="privacy-note">
@@ -411,212 +262,43 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 			<div class="error-banner" id="error-banner" role="alert" hidden></div>
 			<noscript>
 				<p class="noscript-note">
-					JavaScript is required to calculate results. Enable it to use this calculator.
+					JavaScript is required to build the node network and calculate results.
 				</p>
 			</noscript>
 
 			<div class="results-content" id="results-content">
-				<div class="result-hero">
-					<div class="hero-heading">
-						<p class="result-label">Heat flux <span class="symbol">q″</span></p>
-						<span class="hero-unit">per unit area</span>
-					</div>
-					<p class="hero-value">
-						<span id="heat-flux">—</span>
-						<span class="hero-metric">W/m²</span>
-					</p>
-					<p class="hero-secondary"><span id="heat-flux-kw">—</span> kW/m²</p>
+				<div id="results-dynamic">
+					<div class="results-placeholder">Calculating the steady-state network…</div>
 				</div>
-
-				<div class="temp-grid">
-					<article class="temp-card is-hot">
-						<p class="temp-label">Foil face</p>
-						<p class="temp-value">
-							<span id="temp-t1">—</span>
-							<span class="temp-unit">°C</span>
-						</p>
-						<p class="temp-meta">Node 1 · T<sub>1</sub></p>
-					</article>
-					<article class="temp-card is-cool">
-						<p class="temp-label">Composite back</p>
-						<p class="temp-value">
-							<span id="temp-t2">—</span>
-							<span class="temp-unit">°C</span>
-						</p>
-						<p class="temp-meta">Node 2 · T<sub>2</sub></p>
-					</article>
-				</div>
-
-				<div class="status-row">
-					<span class="status-badge" id="convergence-badge">Calculating…</span>
-					<span class="status-note" id="air-fit-note" hidden></span>
-				</div>
-
-				<figure class="chart-card">
-					<figcaption class="chart-heading">
-						<div>
-							<h3>Temperature profile</h3>
-							<p>Steady-state node temperatures</p>
-						</div>
-						<span class="chart-unit">°C</span>
-					</figcaption>
-
-					<div class="resistance-bar" aria-hidden="true">
-						<span class="bar-segment is-gap" id="bar-gap"></span>
-						<span class="bar-segment is-plate" id="bar-plate"></span>
-						<span class="bar-segment is-back" id="bar-back"></span>
-					</div>
-					<div class="bar-legend">
-						<span><i class="swatch is-gap"></i>Air gap <strong id="bar-gap-value">—</strong></span>
-						<span><i class="swatch is-plate"></i>Plate <strong id="bar-plate-value">—</strong></span>
-						<span><i class="swatch is-back"></i>Back surface <strong id="bar-back-value">—</strong></span>
-					</div>
-
-					<svg
-						id="temp-chart"
-						viewBox="0 0 680 300"
-						role="img"
-						aria-labelledby="chart-title chart-desc"
-					>
-						<title id="chart-title">Temperature profile through the thermal network</title>
-						<desc id="chart-desc">Temperature profile from the heat source to ambient.</desc>
-						<g id="chart-grid"></g>
-						<polygon id="chart-area" points=""></polygon>
-						<g id="chart-segments"></g>
-						<g id="chart-points"></g>
-						<g id="chart-y-axis"></g>
-						<g class="chart-x-axis" aria-hidden="true">
-							<text x="58" y="266" class="chart-x-label" text-anchor="middle">Source</text>
-							<text x="256.67" y="266" class="chart-x-label" text-anchor="middle">Foil face</text>
-							<text x="455.33" y="266" class="chart-x-label" text-anchor="middle">Back face</text>
-							<text x="654" y="266" class="chart-x-label" text-anchor="middle">Ambient</text>
-							<text x="157.33" y="288" class="chart-x-sub" text-anchor="middle">Air gap</text>
-							<text x="356" y="288" class="chart-x-sub" text-anchor="middle">Composite plate</text>
-							<text x="554.67" y="288" class="chart-x-sub" text-anchor="middle">Back surface</text>
-						</g>
-					</svg>
-
-					<p class="chart-note">
-						Nodes are evenly spaced for readability. Resistance shares and temperature drops are
-						listed below.
-					</p>
-				</figure>
-
-				<section class="breakdown" aria-labelledby="breakdown-title">
-					<div class="section-heading">
-						<h3 id="breakdown-title">Resistance breakdown</h3>
-						<span>m²·K/W</span>
-					</div>
-
-					<div class="table-wrap">
-						<table>
-							<caption class="sr-only">
-								Thermal resistances, their share of the total and temperature drops.
-							</caption>
-							<thead>
-								<tr>
-									<th scope="col">Layer</th>
-									<th scope="col">R″</th>
-									<th scope="col">Share</th>
-									<th scope="col">ΔT</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<th scope="row">Air gap (parallel)</th>
-									<td id="res-gap">—</td>
-									<td id="share-gap">—</td>
-									<td id="drop-gap">—</td>
-								</tr>
-								<tr class="sub-row">
-									<th scope="row">↳ Conduction</th>
-									<td id="res-gap-cond">—</td>
-									<td>—</td>
-									<td>—</td>
-								</tr>
-								<tr class="sub-row">
-									<th scope="row">↳ Radiation</th>
-									<td id="res-gap-rad">—</td>
-									<td>—</td>
-									<td>—</td>
-								</tr>
-								<tr>
-									<th scope="row">Composite plate</th>
-									<td id="res-plate">—</td>
-									<td id="share-plate">—</td>
-									<td id="drop-plate">—</td>
-								</tr>
-								<tr>
-									<th scope="row">Back surface (parallel)</th>
-									<td id="res-back">—</td>
-									<td id="share-back">—</td>
-									<td id="drop-back">—</td>
-								</tr>
-								<tr class="sub-row">
-									<th scope="row">↳ Convection</th>
-									<td id="res-back-conv">—</td>
-									<td>—</td>
-									<td>—</td>
-								</tr>
-								<tr class="sub-row">
-									<th scope="row">↳ Radiation</th>
-									<td id="res-back-rad">—</td>
-									<td>—</td>
-									<td>—</td>
-								</tr>
-								<tr class="total-row">
-									<th scope="row">Total</th>
-									<td id="res-total">—</td>
-									<td>100%</td>
-									<td id="drop-total">—</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-
-					<div class="property-chips" aria-label="Calculated properties">
-						<span class="chip">
-							k<sub>air</sub> <strong id="prop-kair">—</strong>
-							<span>W/(m·K)</span>
-						</span>
-						<span class="chip">
-							ε<sub>eff</sub> <strong id="prop-epseff">—</strong>
-						</span>
-						<span class="chip">
-							h<sub>rad,gap</sub> <strong id="prop-hgap">—</strong>
-							<span>W/(m²·K)</span>
-						</span>
-						<span class="chip">
-							h<sub>rad,back</sub> <strong id="prop-hback">—</strong>
-							<span>W/(m²·K)</span>
-						</span>
-					</div>
-				</section>
 
 				<details class="method">
 					<summary>Model assumptions &amp; equations</summary>
 					<div class="method-body">
 						<p>
-							The network uses four temperature nodes in series: heat source, foil face, composite
-							back and ambient. Steady-state heat flux is constant through every layer.
+							Material layers are conduction resistances in series. Every connection between the
+							source, layers and ambient contributes its own resistance, and the same heat flux
+							passes through the whole stack.
 						</p>
 						<div class="formula-list">
-							<code>q″ = (T<sub>hot</sub> − T<sub>∞</sub>) / (R″<sub>gap</sub> + R″<sub>plate</sub> + R″<sub>back</sub>)</code>
-							<code>R″<sub>gap</sub> = [ L<sub>gap</sub> / k<sub>air</sub>(T<sub>mean</sub>) ∥ 1 / h<sub>rad,gap</sub> ]</code>
-							<code>R″<sub>plate</sub> = L<sub>plate</sub> / k<sub>plate</sub></code>
+							<code>q″ = (T<sub>hot</sub> − T<sub>∞</sub>) / Σ R″</code>
+							<code>R″<sub>layer</sub> = L<sub>layer</sub> / k<sub>layer</sub></code>
+							<code>R″<sub>air gap</sub> = [ L<sub>gap</sub> / k<sub>air</sub>(T<sub>mean</sub>) ∥ 1 / h<sub>rad,gap</sub> ]</code>
+							<code>R″<sub>adhesive</sub> = L<sub>adhesive</sub> / k<sub>adhesive</sub></code>
 							<code>R″<sub>back</sub> = [ 1 / h<sub>conv,back</sub> ∥ 1 / h<sub>rad,back</sub> ]</code>
-							<code>h<sub>rad</sub> = σ ε (T<sub>a</sub>² + T<sub>b</sub>²)(T<sub>a</sub> + T<sub>b</sub>)</code>
+							<code>h<sub>rad</sub> = σ ε<sub>eff</sub> (T<sub>a</sub>² + T<sub>b</sub>²)(T<sub>a</sub> + T<sub>b</sub>)</code>
 						</div>
 						<ul class="assumption-list">
 							<li>Steady-state, one-dimensional heat transfer with uniform heat flux.</li>
-							<li>Constant plate conductivity and back convection coefficient.</li>
-							<li>Radiation is linearised between infinite parallel plates.</li>
+							<li>Bonded connections have zero thermal resistance.</li>
+							<li>Contact-resistance connections use the specified R″ directly.</li>
+							<li>Air gaps combine stagnant-air conduction with linearised parallel-plate radiation.</li>
+							<li>Bare surfaces use the material emissivity, reflective foil uses the global foil ε, and custom surfaces use the entered ε.</li>
 							<li>The air conductivity fit is a linear approximation intended for roughly 300–900 K.</li>
-							<li>Node temperatures are solved by damped fixed-point iteration using the convergence settings above.</li>
+							<li>Node temperatures are solved by damped fixed-point iteration using the settings above.</li>
 						</ul>
 						<p class="model-reference">
-							Reference implementation: <code>source_model/model.py</code>. The displayed defaults match
-							that model.
+							Reference implementation: <code>source_model/model.py</code>. The source-model template
+							reproduces its single-layer benchmark.
 						</p>
 					</div>
 				</details>
@@ -627,62 +309,55 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	</div>
 
 	<footer class="app-footer">
-		<p>Based on the Python source model. All calculations are performed client-side.</p>
+		<p>Based on the Python source model. The solver is fully client-side.</p>
 		<p>Static-host ready · No server required</p>
 	</footer>
 </section>
 
 <script>
 	import {
-		solveThermalModel,
-		validateInputs,
-		type ThermalModelInputs,
-		type ThermalModelResult,
+		MAX_LAYERS,
+		effectiveGapEmissivity,
+		solveThermalNetwork,
+		type InterfaceType,
+		type NetworkInputs,
+		type ThermalNetworkResult,
 		type ValidationIssue,
-	} from '../lib/thermalModel';
+	} from '../lib/thermalModel.ts';
+	import {
+		DEFAULT_TEMPLATE_ID,
+		INTERFACE_TYPE_LABELS,
+		INTERFACE_TYPE_OPTIONS,
+		MATERIAL_PRESETS,
+		SURFACE_FINISH_OPTIONS,
+		applyMaterialToLayer,
+		applyTemplate,
+		buildNetworkInputs,
+		createInitialState,
+		createInterface,
+		createLayer,
+		getTemplate,
+		resolveSurfaceEmissivity,
+		validateNetworkState,
+		type LayerState,
+		type NetworkState,
+		type SurfaceState,
+	} from '../lib/networkConfig.ts';
 
 	const SVG_NS = 'http://www.w3.org/2000/svg';
-	const advancedFieldIds = new Set([
-		'sourceEmissivity',
+	const ADVANCED_PATHS = new Set([
 		'foilEmissivity',
-		'backEmissivity',
-		'backConvectionWm2K',
 		'airFitIntercept',
 		'airFitSlope',
 		'toleranceK',
 		'maxIterations',
 		'relaxation',
 	]);
-	const inputIdByModelField: Partial<Record<keyof ThermalModelInputs, string>> = {
-		gapThicknessM: 'gapThicknessMm',
-		plateThicknessM: 'plateThicknessMm',
-	};
-	const chartPointClasses = ['point-hot', 'point-warm', 'point-warm', 'point-cool'];
-	const chartSegmentClasses = ['segment-gap', 'segment-plate', 'segment-back'];
 
-	let lastResult: ThermalModelResult | null = null;
-	let lastInputs: ThermalModelInputs | null = null;
+	let state = createInitialState(DEFAULT_TEMPLATE_ID);
+	let lastResult: { result: ThermalNetworkResult; inputs: NetworkInputs } | null = null;
 	let scheduledFrame = 0;
 	let copyTimer = 0;
-
-	function byId<T extends HTMLElement | SVGElement>(id: string): T {
-		const element = document.getElementById(id);
-		if (!element) {
-			throw new Error(`Missing element #${id}`);
-		}
-		return element as T;
-	}
-
-	const form = byId<HTMLFormElement>('model-form');
-	const advanced = byId<HTMLDetailsElement>('advanced-settings');
-	const resultsPanel = byId<HTMLElement>('results-panel');
-	const resultsContent = byId<HTMLElement>('results-content');
-	const errorBanner = byId<HTMLElement>('error-banner');
-	const copyButton = byId<HTMLButtonElement>('copy-button');
-	const liveSummary = byId<HTMLElement>('live-summary');
-	const airFitNote = byId<HTMLElement>('air-fit-note');
-	const convergenceBadge = byId<HTMLElement>('convergence-badge');
-	const chartDescription = byId<SVGElement>('chart-desc');
 
 	const fixedOne = new Intl.NumberFormat('en-US', {
 		minimumFractionDigits: 1,
@@ -692,67 +367,73 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	});
+	const fixedThree = new Intl.NumberFormat('en-US', {
+		minimumFractionDigits: 3,
+		maximumFractionDigits: 3,
+	});
 	const fixedFour = new Intl.NumberFormat('en-US', {
 		minimumFractionDigits: 4,
 		maximumFractionDigits: 4,
+	});
+	const lengthFormat = new Intl.NumberFormat('en-US', {
+		maximumFractionDigits: 3,
 	});
 	const significant = new Intl.NumberFormat('en-US', {
 		maximumSignificantDigits: 4,
 	});
 
-	function readNumber(id: string): number {
-		const input = document.getElementById(id) as HTMLInputElement | null;
-		if (!input || input.value.trim() === '') {
-			return Number.NaN;
-		}
-		return Number(input.value);
-	}
+	const form = byId<HTMLFormElement>('network-form');
+	const chainContainer = byId<HTMLElement>('chain-container');
+	const resultsDynamic = byId<HTMLElement>('results-dynamic');
+	const resultsContent = byId<HTMLElement>('results-content');
+	const resultsPanel = byId<HTMLElement>('results-panel');
+	const errorBanner = byId<HTMLElement>('error-banner');
+	const copyButton = byId<HTMLButtonElement>('copy-button');
+	const resetButton = byId<HTMLButtonElement>('reset-button');
+	const templateSelect = byId<HTMLSelectElement>('template-select');
+	const templateDescription = byId<HTMLElement>('template-description');
+	const advanced = byId<HTMLDetailsElement>('advanced-settings');
+	const liveSummary = byId<HTMLElement>('live-summary');
 
-	function readInputs(): ThermalModelInputs {
-		return {
-			hotTemperatureC: readNumber('hotTemperatureC'),
-			ambientTemperatureC: readNumber('ambientTemperatureC'),
-			gapThicknessM: readNumber('gapThicknessMm') / 1000,
-			plateThicknessM: readNumber('plateThicknessMm') / 1000,
-			plateConductivityWmK: readNumber('plateConductivityWmK'),
-			sourceEmissivity: readNumber('sourceEmissivity'),
-			foilEmissivity: readNumber('foilEmissivity'),
-			backEmissivity: readNumber('backEmissivity'),
-			backConvectionWm2K: readNumber('backConvectionWm2K'),
-			airFitIntercept: readNumber('airFitIntercept'),
-			airFitSlope: readNumber('airFitSlope'),
-			toleranceK: readNumber('toleranceK'),
-			maxIterations: readNumber('maxIterations'),
-			relaxation: readNumber('relaxation'),
-		};
-	}
-
-	function setText(id: string, text: string): void {
+	function byId<T extends HTMLElement | SVGElement>(id: string): T {
 		const element = document.getElementById(id);
-		if (element) {
-			element.textContent = text;
+		if (!element) {
+			throw new Error(`Missing element #${id}`);
 		}
+		return element as T;
+	}
+
+	function escapeHtml(value: string): string {
+		return value.replace(/[&<>"']/g, (character) => {
+			switch (character) {
+				case '&':
+					return '&amp;';
+				case '<':
+					return '&lt;';
+				case '>':
+					return '&gt;';
+				case '"':
+					return '&quot;';
+				default:
+					return '&#39;';
+			}
+		});
+	}
+
+	function numberInputValue(value: number): string {
+		return Number.isFinite(value) ? String(value) : '';
 	}
 
 	function formatFlux(value: number): string {
-		if (!Number.isFinite(value)) {
-			return '—';
-		}
-		return fixedOne.format(value);
+		return Number.isFinite(value) ? fixedOne.format(value) : '—';
 	}
 
 	function formatTemperature(value: number): string {
-		if (!Number.isFinite(value)) {
-			return '—';
-		}
-		return fixedTwo.format(value);
+		return Number.isFinite(value) ? fixedTwo.format(value) : '—';
 	}
 
 	function formatDelta(value: number): string {
-		if (!Number.isFinite(value)) {
-			return '—';
-		}
-		return `${fixedOne.format(value)} K`;
+		return Number.isFinite(value) ? `${fixedOne.format(value)} K` : '—';
 	}
 
 	function formatResistance(value: number): string {
@@ -770,17 +451,19 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	}
 
 	function formatPercent(fraction: number): string {
-		if (!Number.isFinite(fraction)) {
-			return '—';
-		}
-		return `${fixedOne.format(fraction * 100)}%`;
+		return Number.isFinite(fraction) ? `${fixedOne.format(fraction * 100)}%` : '—';
 	}
 
 	function formatProperty(value: number): string {
-		if (!Number.isFinite(value)) {
-			return '—';
-		}
-		return significant.format(value);
+		return Number.isFinite(value) ? significant.format(value) : '—';
+	}
+
+	function formatEmissivity(value: number): string {
+		return Number.isFinite(value) ? fixedFour.format(value) : '—';
+	}
+
+	function formatLength(valueMm: number): string {
+		return Number.isFinite(valueMm) ? lengthFormat.format(valueMm) : '—';
 	}
 
 	function formatResidual(value: number): string {
@@ -796,50 +479,617 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		return significant.format(value);
 	}
 
-	function clearFieldErrors(): void {
-		for (const error of form.querySelectorAll('.field-error')) {
-			error.remove();
-		}
-		for (const input of form.querySelectorAll('input')) {
-			input.removeAttribute('aria-invalid');
-			const help = document.getElementById(`help-${input.id}`);
-			if (help) {
-				input.setAttribute('aria-describedby', help.id);
-			} else {
-				input.removeAttribute('aria-describedby');
+	function findByPath(path: string): HTMLElement | null {
+		const elements = Array.from(form.querySelectorAll<HTMLElement>('[data-path]'));
+		return elements.find((element) => element.dataset.path === path) ?? null;
+	}
+
+	function setValueAtPath(root: unknown, path: string, value: unknown): void {
+		const parts = path.split('.');
+		let current = root as Record<string, unknown>;
+		for (let index = 0; index < parts.length - 1; index += 1) {
+			const next = current[parts[index]];
+			if (!next || typeof next !== 'object') {
+				return;
 			}
+			current = next as Record<string, unknown>;
 		}
+		current[parts[parts.length - 1]] = value;
 	}
 
-	function applyIssue(issue: ValidationIssue): void {
-		const inputId = inputIdByModelField[issue.field] ?? issue.field;
-		const input = document.getElementById(inputId) as HTMLInputElement | null;
-		if (!input) {
-			return;
-		}
-		input.setAttribute('aria-invalid', 'true');
-		const field = input.closest('.field');
-		if (!field) {
-			return;
-		}
-		const error = document.createElement('p');
-		error.className = 'field-error';
-		error.id = `error-${inputId}`;
-		error.textContent = issue.message;
-		field.append(error);
-		const describedBy = [input.getAttribute('aria-describedby'), error.id]
-			.filter(Boolean)
-			.join(' ');
-		input.setAttribute('aria-describedby', describedBy);
+	function layerIndexFromMaterialPath(path: string): number | null {
+		const match = path.match(/^layers\.(\d+)\.materialId$/);
+		return match ? Number(match[1]) : null;
 	}
 
-	function markInvalid(issues: ValidationIssue[]): void {
-		clearFieldErrors();
+	function sourceEffectiveEmissivity(): number {
+		return resolveSurfaceEmissivity(
+			state.sourceSurface,
+			state.sourceBareEmissivity,
+			state.foilEmissivity,
+		);
+	}
+
+	function layerFrontEmissivity(index: number): number {
+		const layer = state.layers[index];
+		if (!layer) {
+			return Number.NaN;
+		}
+		return resolveSurfaceEmissivity(layer.frontSurface, layer.bareEmissivity, state.foilEmissivity);
+	}
+
+	function layerBackEmissivity(index: number): number {
+		const layer = state.layers[index];
+		if (!layer) {
+			return Number.NaN;
+		}
+		return resolveSurfaceEmissivity(layer.backSurface, layer.bareEmissivity, state.foilEmissivity);
+	}
+
+	function gapSurfaces(index: number): { upstream: number; downstream: number } {
+		return {
+			upstream: index === 0 ? sourceEffectiveEmissivity() : layerBackEmissivity(index - 1),
+			downstream: layerFrontEmissivity(index),
+		};
+	}
+
+	function gapEffectiveEmissivity(index: number): number {
+		const surfaces = gapSurfaces(index);
+		if (
+			!Number.isFinite(surfaces.upstream) ||
+			!Number.isFinite(surfaces.downstream) ||
+			surfaces.upstream <= 0 ||
+			surfaces.upstream > 1 ||
+			surfaces.downstream <= 0 ||
+			surfaces.downstream > 1
+		) {
+			return Number.NaN;
+		}
+		return effectiveGapEmissivity(surfaces.upstream, surfaces.downstream);
+	}
+
+	function optionsHtml(
+		options: ReadonlyArray<{ value: string; label: string }>,
+		selected: string,
+	): string {
+		return options
+			.map(
+				(option) =>
+					`<option value="${escapeHtml(option.value)}"${option.value === selected ? ' selected' : ''}>${escapeHtml(option.label)}</option>`,
+			)
+			.join('');
+	}
+
+	function surfaceControlHtml(options: {
+		id: string;
+		path: string;
+		label: string;
+		surface: SurfaceState;
+		bareEmissivity: number;
+		computedPrefix: string;
+		faceNote: string;
+	}): string {
+		const effective = resolveSurfaceEmissivity(
+			options.surface,
+			options.bareEmissivity,
+			state.foilEmissivity,
+		);
+		const customInput =
+			options.surface.finish === 'custom'
+				? `<div class="custom-emissivity-row">
+						<label for="${options.id}-custom">Custom ε</label>
+						<input
+							id="${options.id}-custom"
+							data-path="${options.path}.emissivity"
+							type="number"
+							value="${numberInputValue(options.surface.emissivity)}"
+							step="0.01"
+							min="0.001"
+							max="1"
+							inputmode="decimal"
+							aria-describedby="help-${options.id}"
+						/>
+					</div>`
+				: '';
+
+		return `<div class="field">
+			<div class="field-label-row">
+				<label for="${options.id}">${escapeHtml(options.label)}</label>
+				<span class="unit">ε</span>
+			</div>
+			<select
+				id="${options.id}"
+				data-path="${options.path}.finish"
+				data-rerender="chain"
+				aria-describedby="help-${options.id}"
+			>
+				${optionsHtml(SURFACE_FINISH_OPTIONS, options.surface.finish)}
+			</select>
+			${customInput}
+			<p class="field-help" id="help-${options.id}">
+				${escapeHtml(options.faceNote)} Bare ε
+				<span data-computed="${options.computedPrefix}-bare">${formatEmissivity(options.bareEmissivity)}</span>
+				· Effective ε <strong data-computed="${options.computedPrefix}-effective">${formatEmissivity(effective)}</strong>
+			</p>
+		</div>`;
+	}
+
+	function sourceCardHtml(): string {
+		return `<article class="node-card is-source">
+			<div class="node-card-head">
+				<div class="node-identity">
+					<span class="node-badge is-source">Node 1</span>
+					<div>
+						<h3>Heat source</h3>
+						<p>Fixed hot boundary</p>
+					</div>
+				</div>
+				<span class="node-pill">Source</span>
+			</div>
+			<div class="field-grid">
+				<div class="field">
+					<div class="field-label-row">
+						<label for="source-temperature">Temperature</label>
+						<span class="unit">°C</span>
+					</div>
+					<input
+						id="source-temperature"
+						data-path="sourceTemperatureC"
+						type="number"
+						value="${numberInputValue(state.sourceTemperatureC)}"
+						step="1"
+						min="-273.14"
+						inputmode="decimal"
+						aria-describedby="help-source-temperature"
+					/>
+					<p class="field-help" id="help-source-temperature">
+						Boundary node 1. The first connection decides how it reaches Node 2.
+					</p>
+				</div>
+				${surfaceControlHtml({
+					id: 'source-surface',
+					path: 'sourceSurface',
+					label: 'Facing surface',
+					surface: state.sourceSurface,
+					bareEmissivity: state.sourceBareEmissivity,
+					computedPrefix: 'source-surface',
+					faceNote: 'Surface facing Node 2.',
+				})}
+			</div>
+		</article>`;
+	}
+
+	function interfaceParamsHtml(networkInterface: NetworkState['interfaces'][number], index: number): string {
+		if (networkInterface.type === 'air-gap') {
+			const surfaces = gapSurfaces(index);
+			return `<div class="field">
+					<div class="field-label-row">
+						<label for="interface-${index}-gap">Gap thickness</label>
+						<span class="unit">mm</span>
+					</div>
+					<input
+						id="interface-${index}-gap"
+						data-path="interfaces.${index}.gapThicknessMm"
+						type="number"
+						value="${numberInputValue(networkInterface.gapThicknessMm)}"
+						step="0.1"
+						min="0.001"
+						inputmode="decimal"
+						aria-describedby="help-interface-${index}-gap"
+					/>
+					<p class="field-help" id="help-interface-${index}-gap">
+						Stagnant air conduction in parallel with radiation.
+					</p>
+				</div>
+				<p class="interface-note">
+					Facing surfaces ε
+					<span data-computed="gap-${index}-up">${formatEmissivity(surfaces.upstream)}</span>
+					↔
+					<span data-computed="gap-${index}-down">${formatEmissivity(surfaces.downstream)}</span>
+					· ε<sub>eff</sub>
+					<strong data-computed="gap-${index}-eff">${formatEmissivity(gapEffectiveEmissivity(index))}</strong>
+				</p>`;
+		}
+
+		if (networkInterface.type === 'adhesive') {
+			return `<div class="field-grid">
+					<div class="field">
+						<div class="field-label-row">
+							<label for="interface-${index}-adhesive-thickness">Adhesive thickness</label>
+							<span class="unit">mm</span>
+						</div>
+						<input
+							id="interface-${index}-adhesive-thickness"
+							data-path="interfaces.${index}.adhesiveThicknessMm"
+							type="number"
+							value="${numberInputValue(networkInterface.adhesiveThicknessMm)}"
+							step="0.01"
+							min="0.001"
+							inputmode="decimal"
+							aria-describedby="help-interface-${index}-adhesive-thickness"
+						/>
+						<p class="field-help" id="help-interface-${index}-adhesive-thickness">
+							Thickness of the adhesive bond line.
+						</p>
+					</div>
+					<div class="field">
+						<div class="field-label-row">
+							<label for="interface-${index}-adhesive-conductivity">Adhesive conductivity</label>
+							<span class="unit">W/(m·K)</span>
+						</div>
+						<input
+							id="interface-${index}-adhesive-conductivity"
+							data-path="interfaces.${index}.adhesiveConductivityWmK"
+							type="number"
+							value="${numberInputValue(networkInterface.adhesiveConductivityWmK)}"
+							step="0.01"
+							min="0.000001"
+							inputmode="decimal"
+							aria-describedby="help-interface-${index}-adhesive-conductivity"
+						/>
+						<p class="field-help" id="help-interface-${index}-adhesive-conductivity">
+							Conduction through the adhesive only.
+						</p>
+					</div>
+				</div>`;
+		}
+
+		if (networkInterface.type === 'contact') {
+			return `<div class="field">
+					<div class="field-label-row">
+						<label for="interface-${index}-contact">Contact resistance</label>
+						<span class="unit">m²·K/W</span>
+					</div>
+					<input
+						id="interface-${index}-contact"
+						data-path="interfaces.${index}.contactResistanceM2KW"
+						type="number"
+						value="${numberInputValue(networkInterface.contactResistanceM2KW)}"
+						step="0.0001"
+						min="0"
+						inputmode="decimal"
+						aria-describedby="help-interface-${index}-contact"
+					/>
+					<p class="field-help" id="help-interface-${index}-contact">
+						Specified areal contact resistance for the joint.
+					</p>
+				</div>`;
+		}
+
+		return `<p class="interface-note">Perfect contact. The facing surfaces share a temperature and add no thermal resistance.</p>`;
+	}
+
+	function interfaceCardHtml(networkInterface: NetworkState['interfaces'][number], index: number): string {
+		const upstreamNode = index === 0 ? 1 : index + 1;
+		const downstreamNode = index + 2;
+		return `<section class="connector-card" data-connector="${index}">
+			<div class="connector-rail" aria-hidden="true"></div>
+			<div class="connector-head">
+				<div>
+					<span class="connector-label">Connection ${index + 1}</span>
+					<span class="connector-route">Node ${upstreamNode} ↔ Node ${downstreamNode}</span>
+				</div>
+				<span class="connector-type-dot ${networkInterface.type}"></span>
+			</div>
+			<div class="field">
+				<div class="field-label-row">
+					<label for="interface-${index}-type">Interaction</label>
+					<span class="unit">type</span>
+				</div>
+				<select
+					id="interface-${index}-type"
+					data-path="interfaces.${index}.type"
+					data-rerender="chain"
+				>
+					${optionsHtml(INTERFACE_TYPE_OPTIONS, networkInterface.type)}
+				</select>
+			</div>
+			<div class="interface-params">
+				${interfaceParamsHtml(networkInterface, index)}
+			</div>
+		</section>`;
+	}
+
+	function layerCardHtml(layer: LayerState, index: number): string {
+		const materialOptions = MATERIAL_PRESETS.map(
+			(material) =>
+				`<option value="${material.id}"${material.id === layer.materialId ? ' selected' : ''}>${escapeHtml(material.name)}</option>`,
+		).join('');
+		const isFirst = index === 0;
+		const isLast = index === state.layers.length - 1;
+		const isOnly = state.layers.length === 1;
+		return `<article class="node-card is-layer" data-layer-card="${index}">
+			<div class="node-card-head">
+				<div class="node-identity">
+					<span class="node-badge is-layer">Node ${index + 2}</span>
+					<div class="node-name-wrap">
+						<input
+							id="layer-${index}-label"
+							class="node-name-input"
+							data-path="layers.${index}.label"
+							type="text"
+							value="${escapeHtml(layer.label)}"
+							aria-label="Layer ${index + 1} name"
+						/>
+						<p>Material layer</p>
+					</div>
+				</div>
+				<div class="node-actions">
+					<button
+						type="button"
+						class="icon-button"
+						data-action="move-up"
+						data-index="${index}"
+						aria-label="Move layer up"
+						${isFirst ? 'disabled' : ''}
+					>↑</button>
+					<button
+						type="button"
+						class="icon-button"
+						data-action="move-down"
+						data-index="${index}"
+						aria-label="Move layer down"
+						${isLast ? 'disabled' : ''}
+					>↓</button>
+					<button
+						type="button"
+						class="remove-button"
+						data-action="remove-layer"
+						data-index="${index}"
+						${isOnly ? 'disabled' : ''}
+					>Remove</button>
+				</div>
+			</div>
+
+			<div class="field">
+				<div class="field-label-row">
+					<label for="layer-${index}-material">Material preset</label>
+					<span class="unit">fills properties</span>
+				</div>
+				<select id="layer-${index}-material" data-path="layers.${index}.materialId" data-rerender="chain">
+					${materialOptions}
+				</select>
+				<p class="field-help">Selecting a preset updates the label, thickness, conductivity and bare emissivity.</p>
+			</div>
+
+			<div class="field-grid">
+				<div class="field">
+					<div class="field-label-row">
+						<label for="layer-${index}-thickness">Thickness</label>
+						<span class="unit">mm</span>
+					</div>
+					<input
+						id="layer-${index}-thickness"
+						data-path="layers.${index}.thicknessMm"
+						type="number"
+						value="${numberInputValue(layer.thicknessMm)}"
+						step="0.1"
+						min="0.001"
+						inputmode="decimal"
+						aria-describedby="help-layer-${index}-thickness"
+					/>
+					<p class="field-help" id="help-layer-${index}-thickness">Through-thickness dimension.</p>
+				</div>
+				<div class="field">
+					<div class="field-label-row">
+						<label for="layer-${index}-conductivity">Conductivity</label>
+						<span class="unit">W/(m·K)</span>
+					</div>
+					<input
+						id="layer-${index}-conductivity"
+						data-path="layers.${index}.conductivityWmK"
+						type="number"
+						value="${numberInputValue(layer.conductivityWmK)}"
+						step="0.01"
+						min="0.000001"
+						inputmode="decimal"
+						aria-describedby="help-layer-${index}-conductivity"
+					/>
+					<p class="field-help" id="help-layer-${index}-conductivity">Through-thickness conductivity.</p>
+				</div>
+			</div>
+
+			<div class="surface-grid">
+				${surfaceControlHtml({
+					id: `layer-${index}-front-surface`,
+					path: `layers.${index}.frontSurface`,
+					label: 'Front surface',
+					surface: layer.frontSurface,
+					bareEmissivity: layer.bareEmissivity,
+					computedPrefix: `layer-${index}-front`,
+					faceNote: 'Faces the connection above.',
+				})}
+				${surfaceControlHtml({
+					id: `layer-${index}-back-surface`,
+					path: `layers.${index}.backSurface`,
+					label: 'Back surface',
+					surface: layer.backSurface,
+					bareEmissivity: layer.bareEmissivity,
+					computedPrefix: `layer-${index}-back`,
+					faceNote: 'Faces the connection below or ambient.',
+				})}
+			</div>
+		</article>`;
+	}
+
+	function addLayerButtonHtml(): string {
+		const disabled = state.layers.length >= MAX_LAYERS;
+		return `<button
+			type="button"
+			class="add-layer-button"
+			data-action="add-layer"
+			${disabled ? 'disabled' : ''}
+		>
+			<span aria-hidden="true">+</span> Add material layer
+		</button>`;
+	}
+
+	function ambientCardHtml(): string {
+		const lastLayer = state.layers[state.layers.length - 1];
+		const backEmissivity = lastLayer ? layerBackEmissivity(state.layers.length - 1) : Number.NaN;
+		return `<article class="node-card is-ambient">
+			<div class="node-card-head">
+				<div class="node-identity">
+					<span class="node-badge is-ambient">Node ${state.layers.length + 2}</span>
+					<div>
+						<h3>Ambient</h3>
+						<p>Back boundary</p>
+					</div>
+				</div>
+				<span class="node-pill">Sink</span>
+			</div>
+			<div class="field-grid">
+				<div class="field">
+					<div class="field-label-row">
+						<label for="ambient-temperature">Temperature</label>
+						<span class="unit">°C</span>
+					</div>
+					<input
+						id="ambient-temperature"
+						data-path="ambientTemperatureC"
+						type="number"
+						value="${numberInputValue(state.ambientTemperatureC)}"
+						step="1"
+						min="-273.14"
+						inputmode="decimal"
+						aria-describedby="help-ambient-temperature"
+					/>
+					<p class="field-help" id="help-ambient-temperature">Fixed ambient sink.</p>
+				</div>
+				<div class="field">
+					<div class="field-label-row">
+						<label for="back-convection">Back convection</label>
+						<span class="unit">W/(m²·K)</span>
+					</div>
+					<input
+						id="back-convection"
+						data-path="backConvectionWm2K"
+						type="number"
+						value="${numberInputValue(state.backConvectionWm2K)}"
+						step="0.1"
+						min="0.000001"
+						inputmode="decimal"
+						aria-describedby="help-back-convection"
+					/>
+					<p class="field-help" id="help-back-convection">
+						Natural convection at the final surface.
+					</p>
+				</div>
+			</div>
+			<p class="interface-note">
+				Back radiation uses the final layer's back surface finish:
+				ε <strong data-computed="ambient-back-effective">${formatEmissivity(backEmissivity)}</strong>.
+			</p>
+		</article>`;
+	}
+
+	function renderChain(): void {
+		const cards: string[] = [sourceCardHtml()];
+		state.layers.forEach((layer, index) => {
+			const networkInterface =
+				state.interfaces[index] ?? createInterface('bonded');
+			cards.push(interfaceCardHtml(networkInterface, index));
+			cards.push(layerCardHtml(layer, index));
+		});
+		cards.push(addLayerButtonHtml());
+		cards.push(ambientCardHtml());
+		chainContainer.innerHTML = cards.join('');
+	}
+
+	function setComputed(key: string, text: string): void {
+		const elements = form.querySelectorAll<HTMLElement>(`[data-computed="${key}"]`);
+		elements.forEach((element) => {
+			element.textContent = text;
+		});
+	}
+
+	function updateComputedHints(): void {
+		setComputed('source-surface-bare', formatEmissivity(state.sourceBareEmissivity));
+		setComputed('source-surface-effective', formatEmissivity(sourceEffectiveEmissivity()));
+
+		state.layers.forEach((layer, index) => {
+			setComputed(`layer-${index}-front-bare`, formatEmissivity(layer.bareEmissivity));
+			setComputed(`layer-${index}-back-bare`, formatEmissivity(layer.bareEmissivity));
+			setComputed(`layer-${index}-front-effective`, formatEmissivity(layerFrontEmissivity(index)));
+			setComputed(`layer-${index}-back-effective`, formatEmissivity(layerBackEmissivity(index)));
+		});
+
+		state.interfaces.forEach((networkInterface, index) => {
+			if (networkInterface.type !== 'air-gap') {
+				return;
+			}
+			const surfaces = gapSurfaces(index);
+			setComputed(`gap-${index}-up`, formatEmissivity(surfaces.upstream));
+			setComputed(`gap-${index}-down`, formatEmissivity(surfaces.downstream));
+			setComputed(`gap-${index}-eff`, formatEmissivity(gapEffectiveEmissivity(index)));
+		});
+
+		const lastLayer = state.layers[state.layers.length - 1];
+		setComputed(
+			'ambient-back-effective',
+			formatEmissivity(
+				lastLayer ? layerBackEmissivity(state.layers.length - 1) : Number.NaN,
+			),
+		);
+	}
+
+	function updateTemplateDescription(): void {
+		const template = getTemplate(state.templateId);
+		templateDescription.textContent = template
+			? template.description
+			: 'Custom network — edit any node, connection or surface finish.';
+	}
+
+	function markCustomNetwork(): void {
+		if (state.templateId === 'custom') {
+			return;
+		}
+		state.templateId = 'custom';
+		templateSelect.value = 'custom';
+		updateTemplateDescription();
+	}
+
+	function clearErrors(): void {
+		form.querySelectorAll('.field-error').forEach((element) => element.remove());
+		form.querySelectorAll<HTMLElement>('[data-path]').forEach((element) => {
+			element.removeAttribute('aria-invalid');
+			const help = element.closest('.field')?.querySelector<HTMLElement>('.field-help');
+			if (help?.id) {
+				element.setAttribute('aria-describedby', help.id);
+			} else {
+				element.removeAttribute('aria-describedby');
+			}
+		});
+	}
+
+	function errorIdForPath(path: string): string {
+		return `error-${path.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+	}
+
+	function showErrors(issues: ValidationIssue[]): void {
+		clearErrors();
 		let hasAdvancedIssue = false;
 		for (const issue of issues) {
-			applyIssue(issue);
-			const inputId = inputIdByModelField[issue.field] ?? issue.field;
-			if (advancedFieldIds.has(inputId)) {
+			const input = findByPath(issue.path);
+			if (!input) {
+				continue;
+			}
+			input.setAttribute('aria-invalid', 'true');
+			const field = input.closest('.field');
+			if (!field) {
+				continue;
+			}
+			const error = document.createElement('p');
+			error.className = 'field-error';
+			error.id = errorIdForPath(issue.path);
+			error.textContent = issue.message;
+			field.append(error);
+			const help = field.querySelector<HTMLElement>('.field-help');
+			const describedBy = [help?.id, error.id].filter(Boolean).join(' ');
+			if (describedBy) {
+				input.setAttribute('aria-describedby', describedBy);
+			}
+			if (ADVANCED_PATHS.has(issue.path)) {
 				hasAdvancedIssue = true;
 			}
 		}
@@ -851,6 +1101,9 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 			issues.length === 1
 				? issues[0].message
 				: `${issues.length} inputs need attention. Review the highlighted fields.`;
+	}
+
+	function markResultsInvalid(): void {
 		resultsPanel.dataset.state = 'invalid';
 		resultsPanel.setAttribute('aria-busy', 'false');
 		resultsContent.classList.add('is-stale');
@@ -858,55 +1111,14 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		liveSummary.textContent = 'Results are paused because one or more inputs are invalid.';
 	}
 
-	function markValid(): void {
-		clearFieldErrors();
+	function markResultsValid(): void {
+		clearErrors();
 		errorBanner.hidden = true;
 		errorBanner.textContent = '';
 		resultsPanel.dataset.state = 'valid';
 		resultsPanel.setAttribute('aria-busy', 'false');
 		resultsContent.classList.remove('is-stale');
 		copyButton.disabled = false;
-	}
-
-	function setBarWidth(id: string, fraction: number): void {
-		const bar = document.getElementById(id);
-		if (bar) {
-			bar.style.width = `${Math.min(Math.max(fraction * 100, 0), 100)}%`;
-		}
-	}
-
-	function updateTable(result: ThermalModelResult): void {
-		const total = result.totalResistance;
-		const gapShare = result.gapResistance / total;
-		const plateShare = result.plateResistance / total;
-		const backShare = result.backResistance / total;
-
-		setText('res-gap', formatResistance(result.gapResistance));
-		setText('share-gap', formatPercent(gapShare));
-		setText('drop-gap', formatDelta(result.heatFluxWm2 * result.gapResistance));
-		setText('res-gap-cond', formatResistance(result.gapConductionResistance));
-		setText('res-gap-rad', formatResistance(result.gapRadiationResistance));
-		setText('res-plate', formatResistance(result.plateResistance));
-		setText('share-plate', formatPercent(plateShare));
-		setText('drop-plate', formatDelta(result.heatFluxWm2 * result.plateResistance));
-		setText('res-back', formatResistance(result.backResistance));
-		setText('share-back', formatPercent(backShare));
-		setText('drop-back', formatDelta(result.heatFluxWm2 * result.backResistance));
-		setText('res-back-conv', formatResistance(result.backConvectionResistance));
-		setText('res-back-rad', formatResistance(result.backRadiationResistance));
-		setText('res-total', formatResistance(result.totalResistance));
-		setText('drop-total', formatDelta(result.heatFluxWm2 * result.totalResistance));
-		setText('prop-kair', formatProperty(result.airConductivityWmK));
-		setText('prop-epseff', fixedFour.format(result.effectiveGapEmissivity));
-		setText('prop-hgap', formatProperty(result.gapRadiationCoefficient));
-		setText('prop-hback', formatProperty(result.backRadiationCoefficient));
-
-		setBarWidth('bar-gap', gapShare);
-		setBarWidth('bar-plate', plateShare);
-		setBarWidth('bar-back', backShare);
-		setText('bar-gap-value', formatPercent(gapShare));
-		setText('bar-plate-value', formatPercent(plateShare));
-		setText('bar-back-value', formatPercent(backShare));
 	}
 
 	function niceStep(raw: number): number {
@@ -927,26 +1139,64 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		return element;
 	}
 
-	function renderChart(result: ThermalModelResult, inputs: ThermalModelInputs): void {
+	interface ChartElement {
+		kind: 'interface' | 'layer' | 'back';
+		index: number;
+		label: string;
+		resistance: number;
+		type?: InterfaceType;
+	}
+
+	function chainElements(result: ThermalNetworkResult): ChartElement[] {
+		const elements: ChartElement[] = [];
+		result.layers.forEach((layer, index) => {
+			const networkInterface = result.interfaces[index];
+			elements.push({
+				kind: 'interface',
+				index,
+				label: `Connection ${index + 1} · ${INTERFACE_TYPE_LABELS[networkInterface.type]}`,
+				resistance: networkInterface.resistance,
+				type: networkInterface.type,
+			});
+			elements.push({
+				kind: 'layer',
+				index,
+				label: `Node ${index + 2} · ${layer.label}`,
+				resistance: layer.resistance,
+			});
+		});
+		elements.push({
+			kind: 'back',
+			index: result.layers.length,
+			label: 'Back surface',
+			resistance: result.back.resistance,
+		});
+		return elements;
+	}
+
+	function elementClass(element: ChartElement): string {
+		if (element.kind === 'back') {
+			return 'is-back';
+		}
+		if (element.kind === 'layer') {
+			return 'is-layer';
+		}
+		return `is-${element.type}`;
+	}
+
+	function renderChart(result: ThermalNetworkResult): void {
+		const nodes = result.temperatureNodes;
+		const temperatures = nodes.map((node) => node.temperatureC);
 		const left = 58;
 		const right = 26;
 		const top = 24;
 		const plotWidth = 680 - left - right;
-		const plotHeight = 300 - top - 54;
+		const plotHeight = 320 - top - 76;
 		const plotRight = left + plotWidth;
 		const plotBottom = top + plotHeight;
-		const xPositions = [
-			left,
-			left + plotWidth / 3,
-			left + (2 * plotWidth) / 3,
-			plotRight,
-		];
-		const temperatures = [
-			inputs.hotTemperatureC,
-			result.frontTemperatureC,
-			result.backTemperatureC,
-			inputs.ambientTemperatureC,
-		];
+		const xPositions = nodes.map(
+			(_, index) => left + (plotWidth * index) / Math.max(nodes.length - 1, 1),
+		);
 		const minimum = Math.min(...temperatures);
 		const maximum = Math.max(...temperatures);
 		const range = Math.max(maximum - minimum, 1);
@@ -1003,137 +1253,577 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 
 		const segments = byId<SVGGElement>('chart-segments');
 		segments.replaceChildren();
-		for (let index = 0; index < 3; index += 1) {
+		const elements = chainElements(result);
+		for (let index = 0; index < elements.length; index += 1) {
 			segments.append(
 				svgElement('line', {
 					x1: xPositions[index],
 					y1: scaleY(temperatures[index]),
 					x2: xPositions[index + 1],
 					y2: scaleY(temperatures[index + 1]),
-					class: `chart-segment ${chartSegmentClasses[index]}`,
+					class: `chart-segment ${elementClass(elements[index])}`,
 				}),
 			);
 		}
 
 		const points = byId<SVGGElement>('chart-points');
 		points.replaceChildren();
-		for (let index = 0; index < 4; index += 1) {
-			const y = scaleY(temperatures[index]);
+		const showAllLabels = nodes.length <= 8;
+		nodes.forEach((node, index) => {
+			const y = scaleY(node.temperatureC);
+			const pointClass =
+				node.kind === 'source'
+					? 'point-hot'
+					: node.kind === 'ambient'
+						? 'point-cool'
+						: 'point-layer';
 			points.append(
 				svgElement('circle', {
 					cx: xPositions[index],
 					cy: y,
-					r: 5,
-					class: `chart-point ${chartPointClasses[index]}`,
+					r: 4.5,
+					class: `chart-point ${pointClass}`,
 				}),
 			);
+			const isLayerBack = node.kind === 'layer-back';
+			if (!showAllLabels && !(index === 0 || index === nodes.length - 1 || isLayerBack)) {
+				return;
+			}
 			const label = svgElement('text', {
 				x: xPositions[index],
-				y: Math.max(top + 12, y - 13),
+				y: Math.max(top + 12, y - 12),
 				class: 'chart-point-label',
-				'text-anchor': index === 0 ? 'start' : index === 3 ? 'end' : 'middle',
+				'text-anchor':
+					index === 0 ? 'start' : index === nodes.length - 1 ? 'end' : 'middle',
 			});
-			label.textContent = `${fixedOne.format(temperatures[index])} °C`;
+			label.textContent = `${fixedOne.format(node.temperatureC)} °C`;
 			points.append(label);
-		}
+		});
 
-		chartDescription.textContent = `Temperature falls from ${fixedOne.format(temperatures[0])} degrees Celsius at the source to ${fixedOne.format(temperatures[1])} at the foil face, ${fixedOne.format(temperatures[2])} at the composite back and ${fixedOne.format(temperatures[3])} in the ambient.`;
-	}
-
-	function updateResults(result: ThermalModelResult, inputs: ThermalModelInputs): void {
-		setText('heat-flux', formatFlux(result.heatFluxWm2));
-		setText('heat-flux-kw', (result.heatFluxWm2 / 1000).toFixed(3));
-		setText('temp-t1', formatTemperature(result.frontTemperatureC));
-		setText('temp-t2', formatTemperature(result.backTemperatureC));
-
-		if (result.converged) {
-			convergenceBadge.className = 'status-badge is-success';
-			convergenceBadge.textContent = `Converged in ${result.iterations} iterations · residual ${formatResidual(result.errorK)} K`;
+		const xAxis = byId<SVGGElement>('chart-x-axis');
+		xAxis.replaceChildren();
+		if (showAllLabels) {
+			nodes.forEach((node, index) => {
+				const label = svgElement('text', {
+					x: xPositions[index],
+					y: 274,
+					class: 'chart-x-label',
+					'text-anchor': 'middle',
+				});
+				label.textContent = node.shortLabel;
+				xAxis.append(label);
+			});
 		} else {
-			convergenceBadge.className = 'status-badge is-warning';
-			convergenceBadge.textContent = `Iteration limit reached after ${result.iterations} iterations · results may be approximate`;
+			const sourceLabel = svgElement('text', {
+				x: xPositions[0],
+				y: 274,
+				class: 'chart-x-label',
+				'text-anchor': 'start',
+			});
+			sourceLabel.textContent = 'Source';
+			xAxis.append(sourceLabel);
+
+			result.layers.forEach((_layer, index) => {
+				const backNodeIndex = 2 + index * 2;
+				const label = svgElement('text', {
+					x: xPositions[backNodeIndex],
+					y: 274,
+					class: 'chart-x-label',
+					'text-anchor': 'middle',
+				});
+				label.textContent = `L${index + 1}`;
+				xAxis.append(label);
+			});
+
+			const ambientLabel = svgElement('text', {
+				x: xPositions[nodes.length - 1],
+				y: 274,
+				class: 'chart-x-label',
+				'text-anchor': 'end',
+			});
+			ambientLabel.textContent = 'Ambient';
+			xAxis.append(ambientLabel);
 		}
 
-		airFitNote.hidden = !result.airFitOutOfRange;
-		airFitNote.textContent = result.airFitOutOfRange
-			? `Gap mean temperature ${fixedOne.format(result.gapMeanTemperatureK)} K is outside the 300–900 K air-fit range.`
-			: '';
-		airFitNote.className = result.airFitOutOfRange ? 'status-note is-warning' : 'status-note';
-
-		setText('eps-eff-inline', fixedFour.format(result.effectiveGapEmissivity));
-		updateTable(result);
-		renderChart(result, inputs);
-
-		liveSummary.textContent = `Heat flux ${formatFlux(result.heatFluxWm2)} watts per square metre. Foil face ${formatTemperature(result.frontTemperatureC)} degrees Celsius. Composite back ${formatTemperature(result.backTemperatureC)} degrees Celsius. ${result.converged ? `Converged in ${result.iterations} iterations.` : 'The solver did not converge.'}`;
+		const description = nodes
+			.map((node) => `${node.shortLabel} ${fixedOne.format(node.temperatureC)} degrees Celsius`)
+			.join(', ');
+		const chartDescription = document.getElementById('chart-desc');
+		if (chartDescription) {
+			chartDescription.textContent = `Surface temperature profile: ${description}.`;
+		}
 	}
 
-	function render(): void {
-		const inputs = readInputs();
-		const issues = validateInputs(inputs);
+	function statusHtml(result: ThermalNetworkResult): string {
+		const badgeClass = result.converged ? 'is-success' : 'is-warning';
+		const badgeText = result.converged
+			? `Converged in ${result.iterations} iterations · residual ${formatResidual(result.errorK)} K`
+			: `Iteration limit reached after ${result.iterations} iterations · results may be approximate`;
+		const airFitWarning = result.airFitOutOfRange
+			? '<span class="status-note is-warning">One or more gap mean temperatures are outside the 300–900 K air-fit range.</span>'
+			: '';
+		return `<div class="status-row">
+			<span class="status-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
+			${airFitWarning}
+		</div>`;
+	}
 
+	function heroHtml(result: ThermalNetworkResult): string {
+		return `<div class="result-hero">
+			<div class="hero-heading">
+				<p class="result-label">Heat flux <span class="symbol">q″</span></p>
+				<span class="hero-unit">per unit area</span>
+			</div>
+			<p class="hero-value">
+				<span>${formatFlux(result.heatFluxWm2)}</span>
+				<span class="hero-metric">W/m²</span>
+			</p>
+			<p class="hero-secondary">${fixedThree.format(result.heatFluxWm2 / 1000)} kW/m²</p>
+			<div class="hero-meta">
+				<span>Total R″ <strong>${formatResistance(result.totalResistance)}</strong> m²·K/W</span>
+				<span>Layers <strong>${result.layers.length}</strong></span>
+			</div>
+		</div>`;
+	}
+
+	function nodeTemperaturesHtml(result: ThermalNetworkResult): string {
+		const cards: string[] = [];
+		cards.push(`<div class="temp-node is-source">
+			<div class="temp-node-top">
+				<span class="temp-node-name">Node 1 · Heat source</span>
+				<span class="temp-node-kind">Boundary</span>
+			</div>
+			<div class="temp-node-single"><strong>${formatTemperature(result.sourceTemperatureC)}</strong><span>°C</span></div>
+		</div>`);
+
+		result.layers.forEach((layer, index) => {
+			cards.push(`<div class="temp-node is-layer">
+				<div class="temp-node-top">
+					<span class="temp-node-name">Node ${index + 2} · ${escapeHtml(layer.label)}</span>
+					<span class="temp-node-kind">${formatLength(layer.thicknessM * 1000)} mm</span>
+				</div>
+				<div class="temp-node-pair">
+					<span><small>Front</small><strong>${formatTemperature(layer.frontTemperatureC)}</strong><em>°C</em></span>
+					<span class="temp-node-arrow" aria-hidden="true">→</span>
+					<span><small>Back</small><strong>${formatTemperature(layer.backTemperatureC)}</strong><em>°C</em></span>
+				</div>
+			</div>`);
+		});
+
+		cards.push(`<div class="temp-node is-ambient">
+			<div class="temp-node-top">
+				<span class="temp-node-name">Node ${result.layers.length + 2} · Ambient</span>
+				<span class="temp-node-kind">Boundary</span>
+			</div>
+			<div class="temp-node-single"><strong>${formatTemperature(result.ambientTemperatureC)}</strong><span>°C</span></div>
+		</div>`);
+
+		return `<section class="node-temperatures" aria-labelledby="node-temperatures-title">
+			<div class="section-heading">
+				<h3 id="node-temperatures-title">Node temperatures</h3>
+				<span>°C</span>
+			</div>
+			<div class="temp-chain">${cards.join('')}</div>
+		</section>`;
+	}
+
+	function chartCardHtml(result: ThermalNetworkResult): string {
+		const elements = chainElements(result);
+		const total = result.totalResistance;
+		const barSegments = elements
+			.map((element) => {
+				const share = total > 0 ? element.resistance / total : 0;
+				return `<span
+					class="bar-segment ${elementClass(element)}"
+					style="width:${(share * 100).toFixed(3)}%"
+					title="${escapeHtml(element.label)} · ${formatPercent(share)}"
+				></span>`;
+			})
+			.join('');
+		return `<figure class="chart-card">
+			<figcaption class="chart-heading">
+				<div>
+					<h3>Surface temperature profile</h3>
+					<p>${result.layers.length} material ${result.layers.length === 1 ? 'layer' : 'layers'} in series</p>
+				</div>
+				<span class="chart-unit">°C</span>
+			</figcaption>
+			<div class="resistance-bar" aria-hidden="true">${barSegments}</div>
+			<p class="bar-caption">Widths show each element's share of total resistance.</p>
+			<svg
+				id="temp-chart"
+				viewBox="0 0 680 320"
+				role="img"
+				aria-labelledby="chart-title chart-desc"
+			>
+				<title id="chart-title">Surface temperature profile through the thermal network</title>
+				<desc id="chart-desc">Surface temperature profile.</desc>
+				<g id="chart-grid"></g>
+				<polygon id="chart-area" points=""></polygon>
+				<g id="chart-segments"></g>
+				<g id="chart-points"></g>
+				<g id="chart-y-axis"></g>
+				<g id="chart-x-axis"></g>
+			</svg>
+			<div class="chart-legend">
+				<span><i class="dot is-air-gap"></i>Air gap</span>
+				<span><i class="dot is-layer"></i>Material</span>
+				<span><i class="dot is-adhesive"></i>Adhesive</span>
+				<span><i class="dot is-bonded"></i>Bonded/contact</span>
+				<span><i class="dot is-back"></i>Back boundary</span>
+			</div>
+			<p class="chart-note">Nodes are evenly spaced for readability. Segment colours match the table.</p>
+		</figure>`;
+	}
+
+	function subRowHtml(label: string, resistance: number): string {
+		return `<tr class="sub-row">
+			<td class="sub-label">↳ ${escapeHtml(label)} <span class="parallel-tag">parallel</span></td>
+			<td>${formatResistance(resistance)}</td>
+			<td>—</td>
+			<td>—</td>
+		</tr>`;
+	}
+
+	function interfaceRowHtml(
+		result: ThermalNetworkResult,
+		index: number,
+	): string {
+		const networkInterface = result.interfaces[index];
+		const total = result.totalResistance;
+		const share = total > 0 ? networkInterface.resistance / total : 0;
+		let note = '';
+		if (networkInterface.type === 'air-gap') {
+			note = `ε<sub>eff</sub> ${formatEmissivity(networkInterface.effectiveEmissivity ?? Number.NaN)} · k<sub>air</sub> ${formatProperty(networkInterface.airConductivityWmK ?? Number.NaN)} W/(m·K) · ${formatLength((networkInterface.gapThicknessM ?? 0) * 1000)} mm`;
+		} else if (networkInterface.type === 'bonded') {
+			note = 'Perfect contact · zero resistance';
+		} else if (networkInterface.type === 'adhesive') {
+			note = `${formatLength((networkInterface.adhesiveThicknessM ?? 0) * 1000)} mm · k ${formatProperty(networkInterface.adhesiveConductivityWmK ?? Number.NaN)} W/(m·K)`;
+		} else {
+			note = 'Specified areal contact resistance';
+		}
+
+		let subRows = '';
+		if (networkInterface.type === 'air-gap') {
+			subRows += subRowHtml('Conduction', networkInterface.conductionResistance ?? 0);
+			subRows += subRowHtml('Radiation', networkInterface.radiationResistance ?? 0);
+		}
+
+		return `<tr class="element-row">
+			<th scope="row" class="element-cell">
+				<span class="element-name"><i class="dot ${elementClass({ kind: 'interface', index, label: '', resistance: 0, type: networkInterface.type })}"></i>Connection ${index + 1} · ${escapeHtml(INTERFACE_TYPE_LABELS[networkInterface.type])}</span>
+				<span class="row-note">${note}</span>
+			</th>
+			<td>${formatResistance(networkInterface.resistance)}</td>
+			<td>${formatPercent(share)}</td>
+			<td>${formatDelta(networkInterface.temperatureDropK)}</td>
+		</tr>${subRows}`;
+	}
+
+	function layerRowHtml(result: ThermalNetworkResult, index: number): string {
+		const layer = result.layers[index];
+		const total = result.totalResistance;
+		const share = total > 0 ? layer.resistance / total : 0;
+		const note = `${formatLength(layer.thicknessM * 1000)} mm · k ${formatProperty(layer.conductivityWmK)} W/(m·K) · ε ${formatEmissivity(layer.frontEmissivity)} front / ${formatEmissivity(layer.backEmissivity)} back`;
+		return `<tr class="element-row">
+			<th scope="row" class="element-cell">
+				<span class="element-name"><i class="dot is-layer"></i>Node ${index + 2} · ${escapeHtml(layer.label)}</span>
+				<span class="row-note">${note}</span>
+			</th>
+			<td>${formatResistance(layer.resistance)}</td>
+			<td>${formatPercent(share)}</td>
+			<td>${formatDelta(layer.temperatureDropK)}</td>
+		</tr>`;
+	}
+
+	function backRowHtml(result: ThermalNetworkResult): string {
+		const total = result.totalResistance;
+		const share = total > 0 ? result.back.resistance / total : 0;
+		const note = `h<sub>conv</sub> ${formatProperty(1 / result.back.convectionResistance)} W/(m²·K) · ε ${formatEmissivity(result.back.effectiveEmissivity)}`;
+		return `<tr class="element-row">
+			<th scope="row" class="element-cell">
+				<span class="element-name"><i class="dot is-back"></i>Back surface · Ambient</span>
+				<span class="row-note">${note}</span>
+			</th>
+			<td>${formatResistance(result.back.resistance)}</td>
+			<td>${formatPercent(share)}</td>
+			<td>${formatDelta(result.back.temperatureDropK)}</td>
+		</tr>
+		${subRowHtml('Convection', result.back.convectionResistance)}
+		${subRowHtml('Radiation', result.back.radiationResistance)}`;
+	}
+
+	function breakdownHtml(result: ThermalNetworkResult): string {
+		const rows: string[] = [];
+		result.layers.forEach((_layer, index) => {
+			rows.push(interfaceRowHtml(result, index));
+			rows.push(layerRowHtml(result, index));
+		});
+		rows.push(backRowHtml(result));
+		return `<section class="breakdown" aria-labelledby="breakdown-title">
+			<div class="section-heading">
+				<h3 id="breakdown-title">Resistance breakdown</h3>
+				<span>R″ in m²·K/W</span>
+			</div>
+			<div class="table-wrap">
+				<table>
+					<caption class="sr-only">Thermal resistances, their share of the total and temperature drops.</caption>
+					<thead>
+						<tr>
+							<th scope="col">Element</th>
+							<th scope="col">R″</th>
+							<th scope="col">Share</th>
+							<th scope="col">ΔT</th>
+						</tr>
+					</thead>
+					<tbody>
+						${rows.join('')}
+						<tr class="total-row">
+							<th scope="row">Total</th>
+							<td>${formatResistance(result.totalResistance)}</td>
+							<td>100.0%</td>
+							<td>${formatDelta(result.heatFluxWm2 * result.totalResistance)}</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+			<p class="table-note">Parallel components are shown for reference; their equivalent resistance is the value used in the series network.</p>
+		</section>`;
+	}
+
+	function renderResults(result: ThermalNetworkResult): void {
+		resultsDynamic.innerHTML = `${heroHtml(result)}
+			${statusHtml(result)}
+			${nodeTemperaturesHtml(result)}
+			${chartCardHtml(result)}
+			${breakdownHtml(result)}`;
+		renderChart(result);
+		const layerSummary = result.layers
+			.map(
+				(layer, index) =>
+					`Node ${index + 2} ${layer.label} ${formatTemperature(layer.frontTemperatureC)} to ${formatTemperature(layer.backTemperatureC)} degrees Celsius`,
+			)
+			.join('. ');
+		liveSummary.textContent = `Heat flux ${formatFlux(result.heatFluxWm2)} watts per square metre. ${layerSummary}. ${result.converged ? `Converged in ${result.iterations} iterations.` : 'The solver did not converge.'}`;
+	}
+
+	function refresh(options: { rerenderChain?: boolean; focus?: () => void } = {}): void {
+		if (options.rerenderChain) {
+			renderChain();
+		}
+		updateComputedHints();
+		const issues = validateNetworkState(state);
 		if (issues.length > 0) {
-			lastResult = null;
-			lastInputs = null;
-			markInvalid(issues);
+			showErrors(issues);
+			markResultsInvalid();
+			options.focus?.();
 			return;
 		}
 
-		let result: ThermalModelResult;
+		clearErrors();
 		try {
-			result = solveThermalModel(inputs);
+			const inputs = buildNetworkInputs(state);
+			const result = solveThermalNetwork(inputs);
+			lastResult = { result, inputs };
+			markResultsValid();
+			renderResults(result);
 		} catch (error) {
 			lastResult = null;
-			lastInputs = null;
-			clearFieldErrors();
+			clearErrors();
 			errorBanner.hidden = false;
 			errorBanner.textContent =
-				error instanceof Error ? error.message : 'Unable to solve the thermal model.';
-			resultsPanel.dataset.state = 'invalid';
-			resultsPanel.setAttribute('aria-busy', 'false');
-			resultsContent.classList.add('is-stale');
-			copyButton.disabled = true;
-			liveSummary.textContent = 'Results are paused because the model could not be solved.';
-			return;
+				error instanceof Error ? error.message : 'Unable to solve the thermal network.';
+			markResultsInvalid();
 		}
-
-		lastResult = result;
-		lastInputs = inputs;
-		markValid();
-		updateResults(result, inputs);
+		options.focus?.();
 	}
 
-	function scheduleRender(): void {
+	function scheduleRefresh(): void {
 		if (scheduledFrame) {
 			cancelAnimationFrame(scheduledFrame);
 		}
 		scheduledFrame = requestAnimationFrame(() => {
 			scheduledFrame = 0;
-			render();
+			refresh();
 		});
 	}
 
-	function buildSummary(result: ThermalModelResult, inputs: ThermalModelInputs): string {
-		return [
-			'1D Thermal Resistance Model',
-			`T_hot: ${fixedTwo.format(inputs.hotTemperatureC)} °C`,
-			`T_inf: ${fixedTwo.format(inputs.ambientTemperatureC)} °C`,
-			`Gap: ${fixedTwo.format(inputs.gapThicknessM * 1000)} mm`,
-			`Plate: ${fixedTwo.format(inputs.plateThicknessM * 1000)} mm`,
-			`Plate conductivity: ${formatProperty(inputs.plateConductivityWmK)} W/(m·K)`,
+	function readFieldValue(element: HTMLInputElement | HTMLSelectElement): string | number {
+		if (element instanceof HTMLInputElement && element.type === 'number') {
+			const raw = element.value.trim();
+			return raw === '' ? Number.NaN : Number(element.value);
+		}
+		return element.value;
+	}
+
+	function handleFieldInput(event: Event): void {
+		const target = event.target;
+		if (!(target instanceof HTMLInputElement)) {
+			return;
+		}
+		const path = target.dataset.path;
+		if (!path) {
+			return;
+		}
+		setValueAtPath(state, path, readFieldValue(target));
+		if (!ADVANCED_PATHS.has(path)) {
+			markCustomNetwork();
+		}
+		scheduleRefresh();
+	}
+
+	function handleFieldChange(event: Event): void {
+		const target = event.target;
+		if (!(target instanceof HTMLSelectElement)) {
+			return;
+		}
+		const path = target.dataset.path;
+		if (!path) {
+			return;
+		}
+		const value = target.value;
+
+		if (path.endsWith('.materialId')) {
+			const index = layerIndexFromMaterialPath(path);
+			if (index !== null && state.layers[index]) {
+				state.layers[index] = applyMaterialToLayer(state.layers[index], value);
+			}
+			markCustomNetwork();
+			refresh({
+				rerenderChain: true,
+				focus: () => findByPath(path)?.focus(),
+			});
+			return;
+		}
+
+		setValueAtPath(state, path, value);
+		if (!ADVANCED_PATHS.has(path)) {
+			markCustomNetwork();
+		}
+		if (target.dataset.rerender === 'chain') {
+			refresh({
+				rerenderChain: true,
+				focus: () => findByPath(path)?.focus(),
+			});
+		} else {
+			scheduleRefresh();
+		}
+	}
+
+	function handleAction(event: Event): void {
+		const target = event.target;
+		if (!(target instanceof Element)) {
+			return;
+		}
+		const button = target.closest<HTMLButtonElement>('button[data-action]');
+		if (!button || !chainContainer.contains(button)) {
+			return;
+		}
+		const action = button.dataset.action;
+		const index = Number(button.dataset.index ?? '-1');
+
+		if (action === 'add-layer') {
+			if (state.layers.length >= MAX_LAYERS) {
+				return;
+			}
+			const newLayer = createLayer('custom', { label: 'New layer' });
+			state.layers.push(newLayer);
+			state.interfaces.push(createInterface('bonded'));
+			markCustomNetwork();
+			const focusIndex = state.layers.length - 1;
+			refresh({
+				rerenderChain: true,
+				focus: () => document.getElementById(`layer-${focusIndex}-label`)?.focus(),
+			});
+			return;
+		}
+
+		if (action === 'remove-layer') {
+			if (state.layers.length <= 1 || index < 0 || index >= state.layers.length) {
+				return;
+			}
+			state.layers.splice(index, 1);
+			state.interfaces.splice(index, 1);
+			markCustomNetwork();
+			const focusIndex = Math.max(0, Math.min(index, state.layers.length - 1));
+			refresh({
+				rerenderChain: true,
+				focus: () => document.getElementById(`layer-${focusIndex}-label`)?.focus(),
+			});
+			return;
+		}
+
+		if (action === 'move-up' && index > 0) {
+			[state.layers[index - 1], state.layers[index]] = [
+				state.layers[index],
+				state.layers[index - 1],
+			];
+			markCustomNetwork();
+			refresh({
+				rerenderChain: true,
+				focus: () => document.getElementById(`layer-${index - 1}-label`)?.focus(),
+			});
+			return;
+		}
+
+		if (action === 'move-down' && index >= 0 && index < state.layers.length - 1) {
+			[state.layers[index + 1], state.layers[index]] = [
+				state.layers[index],
+				state.layers[index + 1],
+			];
+			markCustomNetwork();
+			refresh({
+				rerenderChain: true,
+				focus: () => document.getElementById(`layer-${index + 1}-label`)?.focus(),
+			});
+		}
+	}
+
+	function syncAdvancedInputs(): void {
+		const values: Record<string, number> = {
+			foilEmissivity: state.foilEmissivity,
+			airFitIntercept: state.airFitIntercept,
+			airFitSlope: state.airFitSlope,
+			toleranceK: state.toleranceK,
+			maxIterations: state.maxIterations,
+			relaxation: state.relaxation,
+		};
+		for (const [id, value] of Object.entries(values)) {
+			const input = document.getElementById(id) as HTMLInputElement | null;
+			if (input) {
+				input.value = numberInputValue(value);
+			}
+		}
+	}
+
+	function buildSummary(result: ThermalNetworkResult): string {
+		const template = getTemplate(state.templateId);
+		const lines = [
+			'1D Thermal Network Model',
+			`Template: ${template ? template.name : 'Custom network'}`,
+			`T_hot: ${formatTemperature(result.sourceTemperatureC)} °C`,
+			`T_inf: ${formatTemperature(result.ambientTemperatureC)} °C`,
+			'',
+			'Layers:',
+			...result.layers.map(
+				(layer, index) =>
+					`Node ${index + 2} · ${layer.label}: front ${formatTemperature(layer.frontTemperatureC)} °C, back ${formatTemperature(layer.backTemperatureC)} °C, ${formatLength(layer.thicknessM * 1000)} mm, k ${formatProperty(layer.conductivityWmK)} W/(m·K), ε front ${formatEmissivity(layer.frontEmissivity)} / back ${formatEmissivity(layer.backEmissivity)}`,
+			),
+			'',
+			'Connections:',
+			...result.interfaces.map(
+				(networkInterface, index) =>
+					`Connection ${index + 1} · ${INTERFACE_TYPE_LABELS[networkInterface.type]}: R ${formatResistance(networkInterface.resistance)} m²·K/W, ΔT ${formatDelta(networkInterface.temperatureDropK)}`,
+			),
+			`Back surface: R ${formatResistance(result.back.resistance)} m²·K/W, ΔT ${formatDelta(result.back.temperatureDropK)}`,
 			'',
 			`Heat flux: ${formatFlux(result.heatFluxWm2)} W/m²`,
-			`Foil face T1: ${formatTemperature(result.frontTemperatureC)} °C`,
-			`Composite back T2: ${formatTemperature(result.backTemperatureC)} °C`,
-			'',
-			`R_gap: ${formatResistance(result.gapResistance)} m²·K/W`,
-			`R_plate: ${formatResistance(result.plateResistance)} m²·K/W`,
-			`R_back: ${formatResistance(result.backResistance)} m²·K/W`,
-			`R_total: ${formatResistance(result.totalResistance)} m²·K/W`,
-			'',
+			`Total resistance: ${formatResistance(result.totalResistance)} m²·K/W`,
 			result.converged
 				? `Solver: converged in ${result.iterations} iterations`
 				: `Solver: stopped after ${result.iterations} iterations without converging`,
-		].join('\n');
+		];
+		return lines.join('\n');
 	}
 
 	async function copyText(text: string): Promise<void> {
@@ -1152,43 +1842,67 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	}
 
 	copyButton.addEventListener('click', async () => {
-		if (!lastResult || !lastInputs) {
+		if (!lastResult) {
 			return;
 		}
-		const summary = buildSummary(lastResult, lastInputs);
 		try {
-			await copyText(summary);
+			await copyText(buildSummary(lastResult.result));
 			showCopyState('Copied');
 		} catch {
 			showCopyState('Copy failed');
 		}
 	});
 
-	form.addEventListener('input', scheduleRender);
-	form.addEventListener('submit', (event) => {
-		event.preventDefault();
-		render();
-	});
-	form.addEventListener('reset', () => {
-		requestAnimationFrame(() => {
-			advanced.open = false;
-			render();
-		});
+	resetButton.addEventListener('click', () => {
+		state = createInitialState(DEFAULT_TEMPLATE_ID);
+		templateSelect.value = state.templateId;
+		syncAdvancedInputs();
+		advanced.open = false;
+		updateTemplateDescription();
+		refresh({ rerenderChain: true, focus: () => resetButton.focus() });
 	});
 
-	render();
+	templateSelect.addEventListener('change', () => {
+		const selected = templateSelect.value;
+		if (selected === 'custom') {
+			state.templateId = 'custom';
+			updateTemplateDescription();
+			return;
+		}
+		const template = getTemplate(selected);
+		if (!template) {
+			return;
+		}
+		state = applyTemplate(state, template);
+		updateTemplateDescription();
+		refresh({ rerenderChain: true });
+	});
+
+	form.addEventListener('input', handleFieldInput);
+	form.addEventListener('change', handleFieldChange);
+	form.addEventListener('submit', (event) => {
+		event.preventDefault();
+		refresh();
+	});
+	chainContainer.addEventListener('click', handleAction);
+
+	templateSelect.value = state.templateId;
+	syncAdvancedInputs();
+	updateTemplateDescription();
+	renderChain();
+	refresh();
 </script>
 
 <style is:global>
 	.thermal-app {
 		width: 100%;
-		max-width: 1180px;
+		max-width: 1220px;
 		margin: 0 auto;
 		padding: 44px 24px 52px;
 	}
 
 	.thermal-app .app-header {
-		max-width: 860px;
+		max-width: 900px;
 		margin-bottom: 30px;
 	}
 
@@ -1228,7 +1942,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	}
 
 	.thermal-app .lede {
-		max-width: 64ch;
+		max-width: 68ch;
 		margin: 16px 0 0;
 		font-size: 1.02rem;
 		line-height: 1.65;
@@ -1257,7 +1971,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 
 	.thermal-app .calculator-grid {
 		display: grid;
-		grid-template-columns: minmax(330px, 0.84fr) minmax(0, 1.4fr);
+		grid-template-columns: minmax(390px, 0.95fr) minmax(0, 1.25fr);
 		gap: 22px;
 		align-items: start;
 	}
@@ -1304,21 +2018,19 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		text-transform: uppercase;
 	}
 
-	.thermal-app .panel-note {
-		margin: 0 0 20px;
-		padding: 10px 12px;
+	.thermal-app .template-bar {
+		margin-bottom: 20px;
+		padding: 12px;
 		border: 1px solid var(--border);
-		border-radius: 10px;
+		border-radius: 12px;
 		background: var(--panel-soft);
-		color: var(--muted);
-		font-size: 0.8rem;
-		line-height: 1.5;
 	}
 
-	.thermal-app code {
-		font-family: var(--font-mono);
-		font-size: 0.9em;
-		color: var(--text);
+	.thermal-app .template-description {
+		margin: 8px 0 0;
+		color: var(--muted);
+		font-size: 0.72rem;
+		line-height: 1.5;
 	}
 
 	.thermal-app .input-group {
@@ -1345,10 +2057,6 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		gap: 14px;
 	}
 
-	.thermal-app .field-span-full {
-		grid-column: 1 / -1;
-	}
-
 	.thermal-app .field {
 		min-width: 0;
 	}
@@ -1363,7 +2071,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 
 	.thermal-app .field label {
 		color: var(--text);
-		font-size: 0.83rem;
+		font-size: 0.8rem;
 		font-weight: 600;
 		line-height: 1.35;
 	}
@@ -1371,22 +2079,24 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	.thermal-app .unit {
 		flex: none;
 		color: var(--muted);
-		font-size: 0.68rem;
+		font-size: 0.66rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
 
-	.thermal-app input[type='number'] {
+	.thermal-app input[type='number'],
+	.thermal-app input[type='text'],
+	.thermal-app select {
 		width: 100%;
-		min-height: 42px;
-		padding: 9px 11px;
+		min-height: 40px;
+		padding: 8px 10px;
 		border: 1px solid var(--border-strong);
-		border-radius: 10px;
+		border-radius: 9px;
 		background: var(--panel-soft);
 		color: var(--text);
 		font: inherit;
-		font-size: 0.94rem;
+		font-size: 0.9rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		transition:
@@ -1395,43 +2105,395 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 			background-color 160ms ease;
 	}
 
-	.thermal-app input[type='number']:hover {
+	.thermal-app select {
+		padding-right: 28px;
+		cursor: pointer;
+	}
+
+	.thermal-app input[type='number']:hover,
+	.thermal-app input[type='text']:hover,
+	.thermal-app select:hover {
 		border-color: color-mix(in srgb, var(--border-strong), var(--text) 18%);
 	}
 
-	.thermal-app input[type='number']:focus-visible {
+	.thermal-app input[type='number']:focus-visible,
+	.thermal-app input[type='text']:focus-visible,
+	.thermal-app select:focus-visible {
 		outline: none;
 		border-color: var(--accent);
 		background: var(--panel);
 		box-shadow: 0 0 0 3px var(--accent-ring);
 	}
 
-	.thermal-app input[aria-invalid='true'] {
-		border-color: var(--danger);
-		background: var(--danger-soft);
+	.thermal-app [aria-invalid='true'] {
+		border-color: var(--danger) !important;
+		background: var(--danger-soft) !important;
 	}
 
-	.thermal-app input[aria-invalid='true']:focus-visible {
-		box-shadow: 0 0 0 3px var(--danger-ring);
+	.thermal-app [aria-invalid='true']:focus-visible {
+		box-shadow: 0 0 0 3px var(--danger-ring) !important;
 	}
 
 	.thermal-app .field-help {
 		margin: 5px 0 0;
 		color: var(--muted);
-		font-size: 0.7rem;
+		font-size: 0.69rem;
 		line-height: 1.45;
+	}
+
+	.thermal-app .field-help strong {
+		color: var(--text);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.thermal-app .field-error {
 		margin: 5px 0 0;
 		color: var(--danger);
-		font-size: 0.72rem;
+		font-size: 0.71rem;
 		font-weight: 600;
 		line-height: 1.45;
 	}
 
+	.thermal-app .custom-emissivity-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 7px;
+	}
+
+	.thermal-app .custom-emissivity-row label {
+		flex: none;
+		font-size: 0.7rem;
+		color: var(--muted);
+	}
+
+	.thermal-app .custom-emissivity-row input {
+		min-height: 34px;
+		padding: 5px 8px;
+		font-size: 0.8rem;
+	}
+
+	.thermal-app .chain {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+
+	.thermal-app .chain-loading {
+		padding: 28px 16px;
+		border: 1px dashed var(--border-strong);
+		border-radius: 12px;
+		color: var(--muted);
+		font-size: 0.8rem;
+		text-align: center;
+	}
+
+	.thermal-app .node-card {
+		position: relative;
+		padding: 14px;
+		border: 1px solid var(--border);
+		border-radius: 13px;
+		background: var(--panel-soft);
+	}
+
+	.thermal-app .node-card.is-source {
+		box-shadow: inset 3px 0 0 var(--accent);
+	}
+
+	.thermal-app .node-card.is-layer {
+		box-shadow: inset 3px 0 0 var(--layer);
+	}
+
+	.thermal-app .node-card.is-ambient {
+		box-shadow: inset 3px 0 0 var(--cool);
+	}
+
+	.thermal-app .node-card-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 12px;
+	}
+
+	.thermal-app .node-identity {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		min-width: 0;
+	}
+
+	.thermal-app .node-badge {
+		display: inline-flex;
+		align-items: center;
+		flex: none;
+		min-height: 25px;
+		padding: 4px 8px;
+		border-radius: 7px;
+		font-size: 0.68rem;
+		font-weight: 750;
+		letter-spacing: 0.02em;
+	}
+
+	.thermal-app .node-badge.is-source {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.thermal-app .node-badge.is-layer {
+		background: var(--layer-soft);
+		color: var(--layer);
+	}
+
+	.thermal-app .node-badge.is-ambient {
+		background: var(--cool-soft);
+		color: var(--cool);
+	}
+
+	.thermal-app .node-identity h3 {
+		margin: 0;
+		font-size: 0.91rem;
+		letter-spacing: -0.01em;
+	}
+
+	.thermal-app .node-identity p {
+		margin: 2px 0 0;
+		color: var(--muted);
+		font-size: 0.68rem;
+	}
+
+	.thermal-app .node-name-wrap {
+		min-width: 0;
+		flex: 1;
+	}
+
+	.thermal-app .node-name-input {
+		width: 100%;
+		min-height: 0 !important;
+		padding: 1px 4px !important;
+		border: 1px solid transparent !important;
+		border-radius: 5px !important;
+		background: transparent !important;
+		color: var(--text) !important;
+		font-size: 0.91rem !important;
+		font-weight: 700 !important;
+		letter-spacing: -0.01em;
+	}
+
+	.thermal-app .node-name-input:hover {
+		border-color: var(--border) !important;
+	}
+
+	.thermal-app .node-name-input:focus-visible {
+		border-color: var(--accent) !important;
+		box-shadow: 0 0 0 2px var(--accent-ring) !important;
+	}
+
+	.thermal-app .node-pill {
+		flex: none;
+		padding: 3px 8px;
+		border-radius: 999px;
+		background: var(--panel);
+		color: var(--muted);
+		font-size: 0.64rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app .node-actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.thermal-app .icon-button,
+	.thermal-app .remove-button {
+		min-height: 28px;
+		padding: 4px 7px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--panel);
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.7rem;
+		font-weight: 650;
+		cursor: pointer;
+	}
+
+	.thermal-app .icon-button {
+		width: 28px;
+		padding: 0;
+		font-size: 0.9rem;
+	}
+
+	.thermal-app .icon-button:hover:not(:disabled),
+	.thermal-app .remove-button:hover:not(:disabled) {
+		border-color: var(--text);
+		color: var(--text);
+	}
+
+	.thermal-app .icon-button:disabled,
+	.thermal-app .remove-button:disabled {
+		cursor: not-allowed;
+		opacity: 0.4;
+	}
+
+	.thermal-app .remove-button {
+		margin-left: 2px;
+	}
+
+	.thermal-app .surface-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 12px;
+		margin-top: 12px;
+	}
+
+	.thermal-app .surface-grid .field {
+		padding: 10px;
+		border: 1px solid var(--border);
+		border-radius: 9px;
+		background: var(--panel);
+	}
+
+	.thermal-app .connector-card {
+		position: relative;
+		margin: 0 0 0 18px;
+		padding: 12px 14px 14px 22px;
+	}
+
+	.thermal-app .connector-rail {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 7px;
+		width: 2px;
+		background: linear-gradient(var(--border-strong), var(--border));
+	}
+
+	.thermal-app .connector-card::before,
+	.thermal-app .connector-card::after {
+		content: '';
+		position: absolute;
+		left: 3px;
+		width: 10px;
+		height: 10px;
+		border: 2px solid var(--border-strong);
+		border-radius: 50%;
+		background: var(--panel);
+	}
+
+	.thermal-app .connector-card::before {
+		top: -5px;
+	}
+
+	.thermal-app .connector-card::after {
+		bottom: -5px;
+	}
+
+	.thermal-app .connector-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 9px;
+	}
+
+	.thermal-app .connector-label {
+		display: block;
+		color: var(--muted);
+		font-size: 0.65rem;
+		font-weight: 750;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app .connector-route {
+		display: block;
+		margin-top: 1px;
+		color: var(--text);
+		font-size: 0.78rem;
+		font-weight: 650;
+	}
+
+	.thermal-app .connector-type-dot {
+		width: 8px;
+		height: 8px;
+		flex: none;
+		border-radius: 50%;
+		background: var(--neutral-dot);
+	}
+
+	.thermal-app .connector-type-dot.air-gap {
+		background: var(--accent);
+	}
+
+	.thermal-app .connector-type-dot.bonded {
+		background: var(--neutral-dot);
+	}
+
+	.thermal-app .connector-type-dot.adhesive {
+		background: var(--accent-2);
+	}
+
+	.thermal-app .connector-type-dot.contact {
+		background: var(--muted);
+	}
+
+	.thermal-app .interface-params {
+		margin-top: 9px;
+	}
+
+	.thermal-app .interface-params .field-grid {
+		gap: 10px;
+	}
+
+	.thermal-app .interface-note {
+		margin: 9px 0 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.5;
+	}
+
+	.thermal-app .interface-note strong {
+		color: var(--text);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .add-layer-button {
+		align-self: flex-start;
+		margin: 12px 0 12px 18px;
+		padding: 9px 13px;
+		border: 1px dashed var(--border-strong);
+		border-radius: 9px;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.76rem;
+		font-weight: 650;
+		cursor: pointer;
+	}
+
+	.thermal-app .add-layer-button:hover:not(:disabled) {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.thermal-app .add-layer-button:disabled {
+		cursor: not-allowed;
+		opacity: 0.45;
+	}
+
+	.thermal-app .add-layer-button span {
+		margin-right: 4px;
+		font-size: 0.9rem;
+		font-weight: 750;
+	}
+
 	.thermal-app .advanced {
-		margin-top: 4px;
+		margin-top: 18px;
 		border-top: 1px solid var(--border);
 		padding-top: 16px;
 	}
@@ -1483,27 +2545,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	}
 
 	.thermal-app .advanced-body .input-group:last-of-type {
-		margin-bottom: 12px;
-	}
-
-	.thermal-app .fit-note,
-	.thermal-app .computed-note {
-		margin: 10px 0 0;
-		color: var(--muted);
-		font-size: 0.72rem;
-		line-height: 1.5;
-	}
-
-	.thermal-app .computed-note {
-		padding: 9px 11px;
-		border: 1px dashed var(--border-strong);
-		border-radius: 9px;
-		background: var(--panel-soft);
-	}
-
-	.thermal-app .computed-note strong {
-		color: var(--accent);
-		font-variant-numeric: tabular-nums;
+		margin-bottom: 0;
 	}
 
 	.thermal-app .form-actions {
@@ -1644,6 +2686,15 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		opacity: 0.45;
 	}
 
+	.thermal-app .results-placeholder {
+		padding: 50px 20px;
+		border: 1px dashed var(--border-strong);
+		border-radius: 14px;
+		color: var(--muted);
+		font-size: 0.82rem;
+		text-align: center;
+	}
+
 	.thermal-app .result-hero {
 		padding: 20px;
 		border: 1px solid var(--border);
@@ -1709,61 +2760,21 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.thermal-app .temp-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 12px;
-		margin-top: 12px;
-	}
-
-	.thermal-app .temp-card {
-		min-width: 0;
-		padding: 14px 16px;
-		border: 1px solid var(--border);
-		border-radius: 12px;
-		background: var(--panel-soft);
-	}
-
-	.thermal-app .temp-card.is-hot {
-		box-shadow: inset 3px 0 0 var(--accent);
-	}
-
-	.thermal-app .temp-card.is-cool {
-		box-shadow: inset 3px 0 0 var(--cool);
-	}
-
-	.thermal-app .temp-label {
-		margin: 0;
-		color: var(--muted);
-		font-size: 0.71rem;
-		font-weight: 700;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-	}
-
-	.thermal-app .temp-value {
+	.thermal-app .hero-meta {
 		display: flex;
-		align-items: baseline;
-		gap: 4px;
-		margin: 4px 0 0;
-		font-size: 1.65rem;
-		font-weight: 750;
-		line-height: 1;
-		letter-spacing: -0.035em;
+		flex-wrap: wrap;
+		gap: 8px 18px;
+		margin-top: 13px;
+		padding-top: 11px;
+		border-top: 1px solid var(--border);
+		color: var(--muted);
+		font-size: 0.7rem;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.thermal-app .temp-unit {
-		color: var(--muted);
-		font-size: 0.75rem;
-		font-weight: 600;
-		letter-spacing: 0;
-	}
-
-	.thermal-app .temp-meta {
-		margin: 5px 0 0;
-		color: var(--muted);
-		font-size: 0.68rem;
+	.thermal-app .hero-meta strong {
+		color: var(--text);
+		font-weight: 700;
 	}
 
 	.thermal-app .status-row {
@@ -1813,6 +2824,134 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	.thermal-app .status-note.is-warning {
 		color: var(--warning);
 		font-weight: 600;
+	}
+
+	.thermal-app .node-temperatures {
+		margin-top: 18px;
+	}
+
+	.thermal-app .section-heading {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 10px;
+	}
+
+	.thermal-app .section-heading h3 {
+		margin: 0;
+		font-size: 0.93rem;
+		letter-spacing: -0.015em;
+	}
+
+	.thermal-app .section-heading > span {
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-weight: 600;
+	}
+
+	.thermal-app .temp-chain {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.thermal-app .temp-node {
+		padding: 10px 12px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--panel-soft);
+	}
+
+	.thermal-app .temp-node.is-source {
+		box-shadow: inset 3px 0 0 var(--accent);
+	}
+
+	.thermal-app .temp-node.is-layer {
+		box-shadow: inset 3px 0 0 var(--layer);
+	}
+
+	.thermal-app .temp-node.is-ambient {
+		box-shadow: inset 3px 0 0 var(--cool);
+	}
+
+	.thermal-app .temp-node-top {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.thermal-app .temp-node-name {
+		overflow: hidden;
+		color: var(--text);
+		font-size: 0.78rem;
+		font-weight: 650;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.thermal-app .temp-node-kind {
+		flex: none;
+		color: var(--muted);
+		font-size: 0.65rem;
+	}
+
+	.thermal-app .temp-node-single {
+		display: flex;
+		align-items: baseline;
+		gap: 4px;
+		margin-top: 3px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .temp-node-single strong {
+		font-size: 1.25rem;
+		letter-spacing: -0.03em;
+	}
+
+	.thermal-app .temp-node-single span {
+		color: var(--muted);
+		font-size: 0.7rem;
+	}
+
+	.thermal-app .temp-node-pair {
+		display: flex;
+		align-items: flex-end;
+		gap: 10px;
+		margin-top: 3px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .temp-node-pair > span {
+		display: flex;
+		align-items: baseline;
+		gap: 4px;
+	}
+
+	.thermal-app .temp-node-pair small {
+		color: var(--muted);
+		font-size: 0.63rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.thermal-app .temp-node-pair strong {
+		font-size: 1.02rem;
+		letter-spacing: -0.02em;
+	}
+
+	.thermal-app .temp-node-pair em {
+		color: var(--muted);
+		font-size: 0.67rem;
+		font-style: normal;
+	}
+
+	.thermal-app .temp-node-arrow {
+		padding-bottom: 1px;
+		color: var(--muted);
+		font-size: 0.8rem;
 	}
 
 	.thermal-app .chart-card {
@@ -1869,53 +3008,38 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		transition: width 220ms ease;
 	}
 
-	.thermal-app .bar-segment.is-gap,
-	.thermal-app .swatch.is-gap {
+	.thermal-app .bar-segment.is-air-gap {
 		background: var(--accent);
 	}
 
-	.thermal-app .bar-segment.is-plate,
-	.thermal-app .swatch.is-plate {
+	.thermal-app .bar-segment.is-layer {
+		background: var(--layer);
+	}
+
+	.thermal-app .bar-segment.is-adhesive {
 		background: var(--accent-2);
 	}
 
-	.thermal-app .bar-segment.is-back,
-	.thermal-app .swatch.is-back {
+	.thermal-app .bar-segment.is-bonded,
+	.thermal-app .bar-segment.is-contact {
+		background: var(--neutral-dot);
+	}
+
+	.thermal-app .bar-segment.is-back {
 		background: var(--cool);
 	}
 
-	.thermal-app .bar-legend {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px 16px;
-		margin-top: 9px;
+	.thermal-app .bar-caption {
+		margin: 7px 0 0;
 		color: var(--muted);
-		font-size: 0.69rem;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.thermal-app .bar-legend > span {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-	}
-
-	.thermal-app .bar-legend strong {
-		color: var(--text);
-		font-weight: 650;
-	}
-
-	.thermal-app .swatch {
-		width: 7px;
-		height: 7px;
-		border-radius: 2px;
+		font-size: 0.64rem;
 	}
 
 	.thermal-app #temp-chart {
 		display: block;
 		width: 100%;
 		height: auto;
-		margin-top: 4px;
+		margin-top: 2px;
 		overflow: visible;
 	}
 
@@ -1934,7 +3058,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 
 	.thermal-app #chart-area {
 		fill: var(--accent);
-		opacity: 0.075;
+		opacity: 0.07;
 	}
 
 	.thermal-app .chart-segment {
@@ -1942,29 +3066,38 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		stroke-linecap: round;
 	}
 
-	.thermal-app .chart-segment.segment-gap {
+	.thermal-app .chart-segment.is-air-gap {
 		stroke: var(--accent);
 	}
 
-	.thermal-app .chart-segment.segment-plate {
+	.thermal-app .chart-segment.is-layer {
+		stroke: var(--layer);
+	}
+
+	.thermal-app .chart-segment.is-adhesive {
 		stroke: var(--accent-2);
 	}
 
-	.thermal-app .chart-segment.segment-back {
+	.thermal-app .chart-segment.is-bonded,
+	.thermal-app .chart-segment.is-contact {
+		stroke: var(--neutral-dot);
+	}
+
+	.thermal-app .chart-segment.is-back {
 		stroke: var(--cool);
 	}
 
 	.thermal-app .chart-point {
 		fill: var(--panel);
-		stroke-width: 2.5;
+		stroke-width: 2.3;
 	}
 
 	.thermal-app .chart-point.point-hot {
 		stroke: var(--accent);
 	}
 
-	.thermal-app .chart-point.point-warm {
-		stroke: var(--accent-2);
+	.thermal-app .chart-point.point-layer {
+		stroke: var(--layer);
 	}
 
 	.thermal-app .chart-point.point-cool {
@@ -1974,53 +3107,72 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 	.thermal-app .chart-point-label {
 		fill: var(--text);
 		font-family: var(--font-sans);
-		font-size: 11px;
+		font-size: 10.5px;
 		font-weight: 650;
 		font-variant-numeric: tabular-nums;
 	}
 
 	.thermal-app .chart-x-label {
-		fill: var(--text);
+		fill: var(--muted);
 		font-family: var(--font-sans);
-		font-size: 10.5px;
+		font-size: 10px;
 		font-weight: 600;
 	}
 
-	.thermal-app .chart-x-sub {
-		fill: var(--muted);
-		font-family: var(--font-sans);
-		font-size: 9.5px;
+	.thermal-app .chart-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px 14px;
+		margin-top: 4px;
+		color: var(--muted);
+		font-size: 0.66rem;
+	}
+
+	.thermal-app .chart-legend > span {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+
+	.thermal-app .dot {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		flex: none;
+		border-radius: 50%;
+		background: var(--neutral-dot);
+	}
+
+	.thermal-app .dot.is-air-gap {
+		background: var(--accent);
+	}
+
+	.thermal-app .dot.is-layer {
+		background: var(--layer);
+	}
+
+	.thermal-app .dot.is-adhesive {
+		background: var(--accent-2);
+	}
+
+	.thermal-app .dot.is-bonded,
+	.thermal-app .dot.is-contact {
+		background: var(--neutral-dot);
+	}
+
+	.thermal-app .dot.is-back {
+		background: var(--cool);
 	}
 
 	.thermal-app .chart-note {
-		margin: 4px 0 0;
+		margin: 5px 0 0;
 		color: var(--muted);
-		font-size: 0.66rem;
+		font-size: 0.64rem;
 		line-height: 1.5;
 	}
 
 	.thermal-app .breakdown {
 		margin-top: 20px;
-	}
-
-	.thermal-app .section-heading {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 12px;
-		margin-bottom: 10px;
-	}
-
-	.thermal-app .section-heading h3 {
-		margin: 0;
-		font-size: 0.93rem;
-		letter-spacing: -0.015em;
-	}
-
-	.thermal-app .section-heading > span {
-		color: var(--muted);
-		font-size: 0.66rem;
-		font-weight: 600;
 	}
 
 	.thermal-app .table-wrap {
@@ -2031,15 +3183,15 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 
 	.thermal-app table {
 		width: 100%;
-		min-width: 440px;
+		min-width: 500px;
 		border-collapse: collapse;
-		font-size: 0.81rem;
+		font-size: 0.8rem;
 		font-variant-numeric: tabular-nums;
 	}
 
 	.thermal-app th,
 	.thermal-app td {
-		padding: 9px 11px;
+		padding: 8px 10px;
 		border-top: 1px solid var(--border);
 		text-align: right;
 		white-space: nowrap;
@@ -2049,7 +3201,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		border-top: 0;
 		background: var(--panel-soft);
 		color: var(--muted);
-		font-size: 0.65rem;
+		font-size: 0.64rem;
 		font-weight: 700;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
@@ -2065,18 +3217,50 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		color: var(--text);
 	}
 
-	.thermal-app .sub-row th,
-	.thermal-app .sub-row td {
-		padding-top: 6px;
-		padding-bottom: 6px;
+	.thermal-app .element-cell {
+		min-width: 230px;
+		padding-top: 9px;
+		padding-bottom: 9px;
+	}
+
+	.thermal-app .element-name {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.thermal-app .row-note {
+		display: block;
+		margin-top: 2px;
 		color: var(--muted);
-		font-size: 0.73rem;
+		font-size: 0.66rem;
+		font-weight: 500;
+	}
+
+	.thermal-app .sub-row td {
+		padding-top: 5px;
+		padding-bottom: 5px;
+		color: var(--muted);
+		font-size: 0.71rem;
 		font-weight: 500;
 		background: color-mix(in srgb, var(--panel-soft) 45%, transparent);
 	}
 
-	.thermal-app .sub-row th {
-		padding-left: 22px;
+	.thermal-app .sub-row .sub-label {
+		padding-left: 28px;
+		text-align: left;
+	}
+
+	.thermal-app .parallel-tag {
+		margin-left: 5px;
+		padding: 1px 4px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--muted);
+		font-size: 0.58rem;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
 	}
 
 	.thermal-app .total-row th,
@@ -2086,29 +3270,11 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		font-weight: 750;
 	}
 
-	.thermal-app .property-chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 7px;
-		margin-top: 11px;
-	}
-
-	.thermal-app .chip {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 4px;
-		padding: 5px 9px;
-		border: 1px solid var(--border);
-		border-radius: 999px;
-		background: var(--panel-soft);
+	.thermal-app .table-note {
+		margin: 8px 0 0;
 		color: var(--muted);
-		font-size: 0.67rem;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.thermal-app .chip strong {
-		color: var(--text);
-		font-weight: 700;
+		font-size: 0.66rem;
+		line-height: 1.5;
 	}
 
 	.thermal-app .method {
@@ -2222,7 +3388,7 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		border: 0 !important;
 	}
 
-	@media (max-width: 900px) {
+	@media (max-width: 1000px) {
 		.thermal-app {
 			padding: 30px 18px 40px;
 		}
@@ -2236,21 +3402,22 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		}
 	}
 
-	@media (max-width: 560px) {
+	@media (max-width: 620px) {
 		.thermal-app {
 			padding: 24px 12px 32px;
 		}
 
-		.thermal-app .field-grid {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.thermal-app .temp-grid {
+		.thermal-app .field-grid,
+		.thermal-app .surface-grid {
 			grid-template-columns: minmax(0, 1fr);
 		}
 
 		.thermal-app .summary-hint {
 			display: none;
+		}
+
+		.thermal-app .node-card-head {
+			flex-wrap: wrap;
 		}
 
 		.thermal-app .hero-value {
@@ -2262,7 +3429,12 @@ const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
 		}
 
 		.thermal-app .panel {
-			padding: 18px 16px;
+			padding: 18px 14px;
+		}
+
+		.thermal-app .connector-card {
+			margin-left: 8px;
+			padding-left: 18px;
 		}
 	}
 

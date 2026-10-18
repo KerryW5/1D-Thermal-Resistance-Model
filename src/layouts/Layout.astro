@@ -5,8 +5,8 @@ interface Props {
 }
 
 const {
-	title = '1D Thermal Resistance Calculator',
-	description = 'Calculate steady-state heat flux and surface temperatures through an air gap and composite plate with a client-side 1D thermal resistance network.',
+	title = '1D Thermal Network Calculator',
+	description = 'Build a series network of materials, air gaps, bonds and reflective surfaces and calculate steady-state heat flux and node temperatures entirely in your browser.',
 } = Astro.props;
 ---
 
@@ -54,6 +54,9 @@ const {
 		--accent-glow: rgba(247, 103, 7, 0.13);
 		--accent-ring: rgba(217, 72, 15, 0.18);
 		--cool: #1971c2;
+		--layer: #0b7285;
+		--layer-soft: #e3fafc;
+		--neutral-dot: #868e96;
 		--success: #2b8a3e;
 		--success-soft: #ebfbee;
 		--warning: #a84e00;
@@ -84,6 +87,9 @@ const {
 			--accent-glow: rgba(255, 138, 76, 0.12);
 			--accent-ring: rgba(255, 138, 76, 0.25);
 			--cool: #74c0fc;
+			--layer: #63e6be;
+			--layer-soft: #10261f;
+			--neutral-dot: #adb5bd;
 			--success: #69db7c;
 			--success-soft: #14251a;
 			--warning: #ffc078;
