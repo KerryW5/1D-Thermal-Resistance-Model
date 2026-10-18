@@ -1,0 +1,2278 @@
+---
+import { DEFAULT_INPUTS } from '../lib/thermalModel';
+
+const gapMillimetres = DEFAULT_INPUTS.gapThicknessM * 1000;
+const plateMillimetres = DEFAULT_INPUTS.plateThicknessM * 1000;
+---
+
+<section class="thermal-app" id="thermal-calculator">
+	<header class="app-header">
+		<div class="brand-line">
+			<span class="brand-mark" aria-hidden="true">
+				<svg viewBox="0 0 48 48" fill="none">
+					<rect width="48" height="48" rx="14" fill="url(#brand-gradient)"></rect>
+					<path
+						d="M11 31c3.25 0 3.25-8 6.5-8s3.25 8 6.5 8 3.25-8 6.5-8 3.25 8 6.5 8"
+						stroke="white"
+						stroke-width="2.6"
+						stroke-linecap="round"
+					></path>
+					<path
+						d="M11 20h26"
+						stroke="white"
+						stroke-width="2.4"
+						stroke-linecap="round"
+						stroke-opacity="0.55"
+					></path>
+					<defs>
+						<linearGradient id="brand-gradient" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+							<stop stop-color="#f76707"></stop>
+							<stop offset="1" stop-color="#c2410c"></stop>
+						</linearGradient>
+					</defs>
+				</svg>
+			</span>
+			<span class="eyebrow">Steady-state · per unit area</span>
+		</div>
+		<h1>1D Thermal Resistance Calculator</h1>
+		<p class="lede">
+			Estimate heat flux and surface temperatures through a stagnant air gap and composite plate,
+			combining conduction, linearised radiation and natural convection.
+		</p>
+		<ul class="feature-tags" aria-label="Calculator features">
+			<li>4-node network</li>
+			<li>Live results</li>
+			<li>Runs locally</li>
+		</ul>
+	</header>
+
+	<div class="calculator-grid">
+		<form class="panel inputs-panel" id="model-form" novalidate>
+			<div class="panel-heading">
+				<div>
+					<h2>Inputs</h2>
+					<p class="panel-subtitle">Source-model defaults</p>
+				</div>
+				<span class="panel-badge">Metric units</span>
+			</div>
+
+			<p class="panel-note">
+				Defaults reproduce <code>source_model/model.py</code>. Change any value to recalculate
+				instantly.
+			</p>
+
+			<fieldset class="input-group">
+				<legend>Operating conditions</legend>
+				<div class="field-grid">
+					<div class="field">
+						<div class="field-label-row">
+							<label for="hotTemperatureC">Heat source temperature</label>
+							<span class="unit">°C</span>
+						</div>
+						<input
+							id="hotTemperatureC"
+							name="hotTemperatureC"
+							type="number"
+							value={DEFAULT_INPUTS.hotTemperatureC}
+							step="1"
+							min="-273.14"
+							inputmode="decimal"
+							aria-describedby="help-hotTemperatureC"
+							required
+						/>
+						<p class="field-help" id="help-hotTemperatureC">Boundary node 0, T<sub>hot</sub>.</p>
+					</div>
+
+					<div class="field">
+						<div class="field-label-row">
+							<label for="ambientTemperatureC">Ambient temperature</label>
+							<span class="unit">°C</span>
+						</div>
+						<input
+							id="ambientTemperatureC"
+							name="ambientTemperatureC"
+							type="number"
+							value={DEFAULT_INPUTS.ambientTemperatureC}
+							step="1"
+							min="-273.14"
+							inputmode="decimal"
+							aria-describedby="help-ambientTemperatureC"
+							required
+						/>
+						<p class="field-help" id="help-ambientTemperatureC">
+							Back boundary, T<sub>∞</sub>.
+						</p>
+					</div>
+				</div>
+			</fieldset>
+
+			<fieldset class="input-group">
+				<legend>Geometry &amp; material</legend>
+				<div class="field-grid">
+					<div class="field">
+						<div class="field-label-row">
+							<label for="gapThicknessMm">Air gap thickness</label>
+							<span class="unit">mm</span>
+						</div>
+						<input
+							id="gapThicknessMm"
+							name="gapThicknessMm"
+							type="number"
+							value={gapMillimetres}
+							step="0.1"
+							min="0.001"
+							inputmode="decimal"
+							aria-describedby="help-gapThicknessMm"
+							required
+						/>
+						<p class="field-help" id="help-gapThicknessMm">Stagnant air gap, L<sub>gap</sub>.</p>
+					</div>
+
+					<div class="field">
+						<div class="field-label-row">
+							<label for="plateThicknessMm">Plate thickness</label>
+							<span class="unit">mm</span>
+						</div>
+						<input
+							id="plateThicknessMm"
+							name="plateThicknessMm"
+							type="number"
+							value={plateMillimetres}
+							step="0.1"
+							min="0.001"
+							inputmode="decimal"
+							aria-describedby="help-plateThicknessMm"
+							required
+						/>
+						<p class="field-help" id="help-plateThicknessMm">Composite plate, L<sub>plate</sub>.</p>
+					</div>
+
+					<div class="field field-span-full">
+						<div class="field-label-row">
+							<label for="plateConductivityWmK">Plate through-thickness conductivity</label>
+							<span class="unit">W/(m·K)</span>
+						</div>
+						<input
+							id="plateConductivityWmK"
+							name="plateConductivityWmK"
+							type="number"
+							value={DEFAULT_INPUTS.plateConductivityWmK}
+							step="0.01"
+							min="0.000001"
+							inputmode="decimal"
+							aria-describedby="help-plateConductivityWmK"
+							required
+						/>
+						<p class="field-help" id="help-plateConductivityWmK">
+							Constant through-thickness conductivity, k<sub>plate</sub>.
+						</p>
+					</div>
+				</div>
+			</fieldset>
+
+			<details class="advanced" id="advanced-settings">
+				<summary>
+					<span class="summary-title">Advanced settings</span>
+					<span class="summary-hint">Optics, air fit, solver</span>
+					<span class="chevron" aria-hidden="true"></span>
+				</summary>
+
+				<div class="advanced-body">
+					<fieldset class="input-group">
+						<legend>Surface &amp; optical properties</legend>
+						<div class="field-grid">
+							<div class="field">
+								<div class="field-label-row">
+									<label for="sourceEmissivity">Source emissivity</label>
+									<span class="unit">ε<sub>1</sub></span>
+								</div>
+								<input
+									id="sourceEmissivity"
+									name="sourceEmissivity"
+									type="number"
+									value={DEFAULT_INPUTS.sourceEmissivity}
+									step="0.01"
+									min="0.001"
+									max="1"
+									inputmode="decimal"
+									aria-describedby="help-sourceEmissivity"
+									required
+								/>
+								<p class="field-help" id="help-sourceEmissivity">Heat-source surface.</p>
+							</div>
+
+							<div class="field">
+								<div class="field-label-row">
+									<label for="foilEmissivity">Foil emissivity</label>
+									<span class="unit">ε<sub>foil</sub></span>
+								</div>
+								<input
+									id="foilEmissivity"
+									name="foilEmissivity"
+									type="number"
+									value={DEFAULT_INPUTS.foilEmissivity}
+									step="0.01"
+									min="0.001"
+									max="1"
+									inputmode="decimal"
+									aria-describedby="help-foilEmissivity"
+									required
+								/>
+								<p class="field-help" id="help-foilEmissivity">Reflective foil face.</p>
+							</div>
+
+							<div class="field">
+								<div class="field-label-row">
+									<label for="backEmissivity">Back-surface emissivity</label>
+									<span class="unit">ε<sub>back</sub></span>
+								</div>
+								<input
+									id="backEmissivity"
+									name="backEmissivity"
+									type="number"
+									value={DEFAULT_INPUTS.backEmissivity}
+									step="0.01"
+									min="0.001"
+									max="1"
+									inputmode="decimal"
+									aria-describedby="help-backEmissivity"
+									required
+								/>
+								<p class="field-help" id="help-backEmissivity">Composite rear face.</p>
+							</div>
+
+							<div class="field">
+								<div class="field-label-row">
+									<label for="backConvectionWm2K">Back convection coefficient</label>
+									<span class="unit">W/(m²·K)</span>
+								</div>
+								<input
+									id="backConvectionWm2K"
+									name="backConvectionWm2K"
+									type="number"
+									value={DEFAULT_INPUTS.backConvectionWm2K}
+									step="0.1"
+									min="0.000001"
+									inputmode="decimal"
+									aria-describedby="help-backConvectionWm2K"
+									required
+								/>
+								<p class="field-help" id="help-backConvectionWm2K">
+									Natural convection, h<sub>back</sub>.
+								</p>
+							</div>
+						</div>
+					</fieldset>
+
+					<fieldset class="input-group">
+						<legend>Air conductivity fit</legend>
+						<div class="field-grid">
+							<div class="field">
+								<div class="field-label-row">
+									<label for="airFitIntercept">Intercept</label>
+									<span class="unit">W/(m·K)</span>
+								</div>
+								<input
+									id="airFitIntercept"
+									name="airFitIntercept"
+									type="number"
+									value={DEFAULT_INPUTS.airFitIntercept}
+									step="0.0001"
+									min="0.000001"
+									inputmode="decimal"
+									aria-describedby="help-airFitIntercept"
+									required
+								/>
+								<p class="field-help" id="help-airFitIntercept">Constant term in the air fit.</p>
+							</div>
+
+							<div class="field">
+								<div class="field-label-row">
+									<label for="airFitSlope">Slope</label>
+									<span class="unit">W/(m·K·°C)</span>
+								</div>
+								<input
+									id="airFitSlope"
+									name="airFitSlope"
+									type="number"
+									value={DEFAULT_INPUTS.airFitSlope}
+									step="0.000001"
+									min="0"
+									inputmode="decimal"
+									aria-describedby="help-airFitSlope"
+									required
+								/>
+								<p class="field-help" id="help-airFitSlope">Temperature coefficient.</p>
+							</div>
+						</div>
+						<p class="fit-note">
+							k<sub>air</sub> = intercept + slope · T[°C]. The source fit is intended for roughly
+							300–900 K.
+						</p>
+					</fieldset>
+
+					<fieldset class="input-group">
+						<legend>Solver</legend>
+						<div class="field-grid">
+							<div class="field">
+								<div class="field-label-row">
+									<label for="toleranceK">Convergence tolerance</label>
+									<span class="unit">K</span>
+								</div>
+								<input
+									id="toleranceK"
+									name="toleranceK"
+									type="number"
+									value={DEFAULT_INPUTS.toleranceK}
+									step="any"
+									min="0.000000001"
+									inputmode="decimal"
+									aria-describedby="help-toleranceK"
+									required
+								/>
+								<p class="field-help" id="help-toleranceK">Maximum node-temperature change.</p>
+							</div>
+
+							<div class="field">
+								<div class="field-label-row">
+									<label for="maxIterations">Maximum iterations</label>
+									<span class="unit">iter</span>
+								</div>
+								<input
+									id="maxIterations"
+									name="maxIterations"
+									type="number"
+									value={DEFAULT_INPUTS.maxIterations}
+									step="1"
+									min="1"
+									max="100000"
+									inputmode="numeric"
+									aria-describedby="help-maxIterations"
+									required
+								/>
+								<p class="field-help" id="help-maxIterations">Upper limit for the fixed-point loop.</p>
+							</div>
+
+							<div class="field">
+								<div class="field-label-row">
+									<label for="relaxation">Relaxation factor</label>
+									<span class="unit">0–1</span>
+								</div>
+								<input
+									id="relaxation"
+									name="relaxation"
+									type="number"
+									value={DEFAULT_INPUTS.relaxation}
+									step="0.05"
+									min="0.01"
+									max="1"
+									inputmode="decimal"
+									aria-describedby="help-relaxation"
+									required
+								/>
+								<p class="field-help" id="help-relaxation">Damping applied to temperature updates.</p>
+							</div>
+						</div>
+					</fieldset>
+
+					<p class="computed-note">
+						Computed gap emissivity ε<sub>eff</sub> = <strong id="eps-eff-inline">—</strong>
+					</p>
+				</div>
+			</details>
+
+			<div class="form-actions">
+				<button class="button button-primary" type="button" id="copy-button" disabled>
+					Copy results
+				</button>
+				<button class="button button-ghost" type="reset">Reset defaults</button>
+			</div>
+
+			<p class="privacy-note">
+				<span class="privacy-dot" aria-hidden="true"></span>
+				All calculations run in your browser. No data is sent to a server.
+			</p>
+		</form>
+
+		<section
+			class="panel results-panel"
+			id="results-panel"
+			data-state="loading"
+			aria-busy="true"
+		>
+			<div class="panel-heading">
+				<div>
+					<h2>Results</h2>
+					<p class="panel-subtitle">Live steady-state solution</p>
+				</div>
+				<span class="live-pill"><span aria-hidden="true"></span>Live</span>
+			</div>
+
+			<div class="error-banner" id="error-banner" role="alert" hidden></div>
+			<noscript>
+				<p class="noscript-note">
+					JavaScript is required to calculate results. Enable it to use this calculator.
+				</p>
+			</noscript>
+
+			<div class="results-content" id="results-content">
+				<div class="result-hero">
+					<div class="hero-heading">
+						<p class="result-label">Heat flux <span class="symbol">q″</span></p>
+						<span class="hero-unit">per unit area</span>
+					</div>
+					<p class="hero-value">
+						<span id="heat-flux">—</span>
+						<span class="hero-metric">W/m²</span>
+					</p>
+					<p class="hero-secondary"><span id="heat-flux-kw">—</span> kW/m²</p>
+				</div>
+
+				<div class="temp-grid">
+					<article class="temp-card is-hot">
+						<p class="temp-label">Foil face</p>
+						<p class="temp-value">
+							<span id="temp-t1">—</span>
+							<span class="temp-unit">°C</span>
+						</p>
+						<p class="temp-meta">Node 1 · T<sub>1</sub></p>
+					</article>
+					<article class="temp-card is-cool">
+						<p class="temp-label">Composite back</p>
+						<p class="temp-value">
+							<span id="temp-t2">—</span>
+							<span class="temp-unit">°C</span>
+						</p>
+						<p class="temp-meta">Node 2 · T<sub>2</sub></p>
+					</article>
+				</div>
+
+				<div class="status-row">
+					<span class="status-badge" id="convergence-badge">Calculating…</span>
+					<span class="status-note" id="air-fit-note" hidden></span>
+				</div>
+
+				<figure class="chart-card">
+					<figcaption class="chart-heading">
+						<div>
+							<h3>Temperature profile</h3>
+							<p>Steady-state node temperatures</p>
+						</div>
+						<span class="chart-unit">°C</span>
+					</figcaption>
+
+					<div class="resistance-bar" aria-hidden="true">
+						<span class="bar-segment is-gap" id="bar-gap"></span>
+						<span class="bar-segment is-plate" id="bar-plate"></span>
+						<span class="bar-segment is-back" id="bar-back"></span>
+					</div>
+					<div class="bar-legend">
+						<span><i class="swatch is-gap"></i>Air gap <strong id="bar-gap-value">—</strong></span>
+						<span><i class="swatch is-plate"></i>Plate <strong id="bar-plate-value">—</strong></span>
+						<span><i class="swatch is-back"></i>Back surface <strong id="bar-back-value">—</strong></span>
+					</div>
+
+					<svg
+						id="temp-chart"
+						viewBox="0 0 680 300"
+						role="img"
+						aria-labelledby="chart-title chart-desc"
+					>
+						<title id="chart-title">Temperature profile through the thermal network</title>
+						<desc id="chart-desc">Temperature profile from the heat source to ambient.</desc>
+						<g id="chart-grid"></g>
+						<polygon id="chart-area" points=""></polygon>
+						<g id="chart-segments"></g>
+						<g id="chart-points"></g>
+						<g id="chart-y-axis"></g>
+						<g class="chart-x-axis" aria-hidden="true">
+							<text x="58" y="266" class="chart-x-label" text-anchor="middle">Source</text>
+							<text x="256.67" y="266" class="chart-x-label" text-anchor="middle">Foil face</text>
+							<text x="455.33" y="266" class="chart-x-label" text-anchor="middle">Back face</text>
+							<text x="654" y="266" class="chart-x-label" text-anchor="middle">Ambient</text>
+							<text x="157.33" y="288" class="chart-x-sub" text-anchor="middle">Air gap</text>
+							<text x="356" y="288" class="chart-x-sub" text-anchor="middle">Composite plate</text>
+							<text x="554.67" y="288" class="chart-x-sub" text-anchor="middle">Back surface</text>
+						</g>
+					</svg>
+
+					<p class="chart-note">
+						Nodes are evenly spaced for readability. Resistance shares and temperature drops are
+						listed below.
+					</p>
+				</figure>
+
+				<section class="breakdown" aria-labelledby="breakdown-title">
+					<div class="section-heading">
+						<h3 id="breakdown-title">Resistance breakdown</h3>
+						<span>m²·K/W</span>
+					</div>
+
+					<div class="table-wrap">
+						<table>
+							<caption class="sr-only">
+								Thermal resistances, their share of the total and temperature drops.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Layer</th>
+									<th scope="col">R″</th>
+									<th scope="col">Share</th>
+									<th scope="col">ΔT</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<th scope="row">Air gap (parallel)</th>
+									<td id="res-gap">—</td>
+									<td id="share-gap">—</td>
+									<td id="drop-gap">—</td>
+								</tr>
+								<tr class="sub-row">
+									<th scope="row">↳ Conduction</th>
+									<td id="res-gap-cond">—</td>
+									<td>—</td>
+									<td>—</td>
+								</tr>
+								<tr class="sub-row">
+									<th scope="row">↳ Radiation</th>
+									<td id="res-gap-rad">—</td>
+									<td>—</td>
+									<td>—</td>
+								</tr>
+								<tr>
+									<th scope="row">Composite plate</th>
+									<td id="res-plate">—</td>
+									<td id="share-plate">—</td>
+									<td id="drop-plate">—</td>
+								</tr>
+								<tr>
+									<th scope="row">Back surface (parallel)</th>
+									<td id="res-back">—</td>
+									<td id="share-back">—</td>
+									<td id="drop-back">—</td>
+								</tr>
+								<tr class="sub-row">
+									<th scope="row">↳ Convection</th>
+									<td id="res-back-conv">—</td>
+									<td>—</td>
+									<td>—</td>
+								</tr>
+								<tr class="sub-row">
+									<th scope="row">↳ Radiation</th>
+									<td id="res-back-rad">—</td>
+									<td>—</td>
+									<td>—</td>
+								</tr>
+								<tr class="total-row">
+									<th scope="row">Total</th>
+									<td id="res-total">—</td>
+									<td>100%</td>
+									<td id="drop-total">—</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<div class="property-chips" aria-label="Calculated properties">
+						<span class="chip">
+							k<sub>air</sub> <strong id="prop-kair">—</strong>
+							<span>W/(m·K)</span>
+						</span>
+						<span class="chip">
+							ε<sub>eff</sub> <strong id="prop-epseff">—</strong>
+						</span>
+						<span class="chip">
+							h<sub>rad,gap</sub> <strong id="prop-hgap">—</strong>
+							<span>W/(m²·K)</span>
+						</span>
+						<span class="chip">
+							h<sub>rad,back</sub> <strong id="prop-hback">—</strong>
+							<span>W/(m²·K)</span>
+						</span>
+					</div>
+				</section>
+
+				<details class="method">
+					<summary>Model assumptions &amp; equations</summary>
+					<div class="method-body">
+						<p>
+							The network uses four temperature nodes in series: heat source, foil face, composite
+							back and ambient. Steady-state heat flux is constant through every layer.
+						</p>
+						<div class="formula-list">
+							<code>q″ = (T<sub>hot</sub> − T<sub>∞</sub>) / (R″<sub>gap</sub> + R″<sub>plate</sub> + R″<sub>back</sub>)</code>
+							<code>R″<sub>gap</sub> = [ L<sub>gap</sub> / k<sub>air</sub>(T<sub>mean</sub>) ∥ 1 / h<sub>rad,gap</sub> ]</code>
+							<code>R″<sub>plate</sub> = L<sub>plate</sub> / k<sub>plate</sub></code>
+							<code>R″<sub>back</sub> = [ 1 / h<sub>conv,back</sub> ∥ 1 / h<sub>rad,back</sub> ]</code>
+							<code>h<sub>rad</sub> = σ ε (T<sub>a</sub>² + T<sub>b</sub>²)(T<sub>a</sub> + T<sub>b</sub>)</code>
+						</div>
+						<ul class="assumption-list">
+							<li>Steady-state, one-dimensional heat transfer with uniform heat flux.</li>
+							<li>Constant plate conductivity and back convection coefficient.</li>
+							<li>Radiation is linearised between infinite parallel plates.</li>
+							<li>The air conductivity fit is a linear approximation intended for roughly 300–900 K.</li>
+							<li>Node temperatures are solved by damped fixed-point iteration using the convergence settings above.</li>
+						</ul>
+						<p class="model-reference">
+							Reference implementation: <code>source_model/model.py</code>. The displayed defaults match
+							that model.
+						</p>
+					</div>
+				</details>
+
+				<p class="sr-only" id="live-summary" aria-live="polite" aria-atomic="true"></p>
+			</div>
+		</section>
+	</div>
+
+	<footer class="app-footer">
+		<p>Based on the Python source model. All calculations are performed client-side.</p>
+		<p>Static-host ready · No server required</p>
+	</footer>
+</section>
+
+<script>
+	import {
+		solveThermalModel,
+		validateInputs,
+		type ThermalModelInputs,
+		type ThermalModelResult,
+		type ValidationIssue,
+	} from '../lib/thermalModel';
+
+	const SVG_NS = 'http://www.w3.org/2000/svg';
+	const advancedFieldIds = new Set([
+		'sourceEmissivity',
+		'foilEmissivity',
+		'backEmissivity',
+		'backConvectionWm2K',
+		'airFitIntercept',
+		'airFitSlope',
+		'toleranceK',
+		'maxIterations',
+		'relaxation',
+	]);
+	const inputIdByModelField: Partial<Record<keyof ThermalModelInputs, string>> = {
+		gapThicknessM: 'gapThicknessMm',
+		plateThicknessM: 'plateThicknessMm',
+	};
+	const chartPointClasses = ['point-hot', 'point-warm', 'point-warm', 'point-cool'];
+	const chartSegmentClasses = ['segment-gap', 'segment-plate', 'segment-back'];
+
+	let lastResult: ThermalModelResult | null = null;
+	let lastInputs: ThermalModelInputs | null = null;
+	let scheduledFrame = 0;
+	let copyTimer = 0;
+
+	function byId<T extends HTMLElement | SVGElement>(id: string): T {
+		const element = document.getElementById(id);
+		if (!element) {
+			throw new Error(`Missing element #${id}`);
+		}
+		return element as T;
+	}
+
+	const form = byId<HTMLFormElement>('model-form');
+	const advanced = byId<HTMLDetailsElement>('advanced-settings');
+	const resultsPanel = byId<HTMLElement>('results-panel');
+	const resultsContent = byId<HTMLElement>('results-content');
+	const errorBanner = byId<HTMLElement>('error-banner');
+	const copyButton = byId<HTMLButtonElement>('copy-button');
+	const liveSummary = byId<HTMLElement>('live-summary');
+	const airFitNote = byId<HTMLElement>('air-fit-note');
+	const convergenceBadge = byId<HTMLElement>('convergence-badge');
+	const chartDescription = byId<SVGElement>('chart-desc');
+
+	const fixedOne = new Intl.NumberFormat('en-US', {
+		minimumFractionDigits: 1,
+		maximumFractionDigits: 1,
+	});
+	const fixedTwo = new Intl.NumberFormat('en-US', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	});
+	const fixedFour = new Intl.NumberFormat('en-US', {
+		minimumFractionDigits: 4,
+		maximumFractionDigits: 4,
+	});
+	const significant = new Intl.NumberFormat('en-US', {
+		maximumSignificantDigits: 4,
+	});
+
+	function readNumber(id: string): number {
+		const input = document.getElementById(id) as HTMLInputElement | null;
+		if (!input || input.value.trim() === '') {
+			return Number.NaN;
+		}
+		return Number(input.value);
+	}
+
+	function readInputs(): ThermalModelInputs {
+		return {
+			hotTemperatureC: readNumber('hotTemperatureC'),
+			ambientTemperatureC: readNumber('ambientTemperatureC'),
+			gapThicknessM: readNumber('gapThicknessMm') / 1000,
+			plateThicknessM: readNumber('plateThicknessMm') / 1000,
+			plateConductivityWmK: readNumber('plateConductivityWmK'),
+			sourceEmissivity: readNumber('sourceEmissivity'),
+			foilEmissivity: readNumber('foilEmissivity'),
+			backEmissivity: readNumber('backEmissivity'),
+			backConvectionWm2K: readNumber('backConvectionWm2K'),
+			airFitIntercept: readNumber('airFitIntercept'),
+			airFitSlope: readNumber('airFitSlope'),
+			toleranceK: readNumber('toleranceK'),
+			maxIterations: readNumber('maxIterations'),
+			relaxation: readNumber('relaxation'),
+		};
+	}
+
+	function setText(id: string, text: string): void {
+		const element = document.getElementById(id);
+		if (element) {
+			element.textContent = text;
+		}
+	}
+
+	function formatFlux(value: number): string {
+		if (!Number.isFinite(value)) {
+			return '—';
+		}
+		return fixedOne.format(value);
+	}
+
+	function formatTemperature(value: number): string {
+		if (!Number.isFinite(value)) {
+			return '—';
+		}
+		return fixedTwo.format(value);
+	}
+
+	function formatDelta(value: number): string {
+		if (!Number.isFinite(value)) {
+			return '—';
+		}
+		return `${fixedOne.format(value)} K`;
+	}
+
+	function formatResistance(value: number): string {
+		if (!Number.isFinite(value)) {
+			return '—';
+		}
+		if (value === 0) {
+			return '0';
+		}
+		const magnitude = Math.abs(value);
+		if (magnitude < 1e-4 || magnitude >= 1e5) {
+			return value.toExponential(3);
+		}
+		return significant.format(value);
+	}
+
+	function formatPercent(fraction: number): string {
+		if (!Number.isFinite(fraction)) {
+			return '—';
+		}
+		return `${fixedOne.format(fraction * 100)}%`;
+	}
+
+	function formatProperty(value: number): string {
+		if (!Number.isFinite(value)) {
+			return '—';
+		}
+		return significant.format(value);
+	}
+
+	function formatResidual(value: number): string {
+		if (!Number.isFinite(value)) {
+			return '—';
+		}
+		if (value === 0) {
+			return '0';
+		}
+		if (value < 0.001) {
+			return value.toExponential(1);
+		}
+		return significant.format(value);
+	}
+
+	function clearFieldErrors(): void {
+		for (const error of form.querySelectorAll('.field-error')) {
+			error.remove();
+		}
+		for (const input of form.querySelectorAll('input')) {
+			input.removeAttribute('aria-invalid');
+			const help = document.getElementById(`help-${input.id}`);
+			if (help) {
+				input.setAttribute('aria-describedby', help.id);
+			} else {
+				input.removeAttribute('aria-describedby');
+			}
+		}
+	}
+
+	function applyIssue(issue: ValidationIssue): void {
+		const inputId = inputIdByModelField[issue.field] ?? issue.field;
+		const input = document.getElementById(inputId) as HTMLInputElement | null;
+		if (!input) {
+			return;
+		}
+		input.setAttribute('aria-invalid', 'true');
+		const field = input.closest('.field');
+		if (!field) {
+			return;
+		}
+		const error = document.createElement('p');
+		error.className = 'field-error';
+		error.id = `error-${inputId}`;
+		error.textContent = issue.message;
+		field.append(error);
+		const describedBy = [input.getAttribute('aria-describedby'), error.id]
+			.filter(Boolean)
+			.join(' ');
+		input.setAttribute('aria-describedby', describedBy);
+	}
+
+	function markInvalid(issues: ValidationIssue[]): void {
+		clearFieldErrors();
+		let hasAdvancedIssue = false;
+		for (const issue of issues) {
+			applyIssue(issue);
+			const inputId = inputIdByModelField[issue.field] ?? issue.field;
+			if (advancedFieldIds.has(inputId)) {
+				hasAdvancedIssue = true;
+			}
+		}
+		if (hasAdvancedIssue) {
+			advanced.open = true;
+		}
+		errorBanner.hidden = false;
+		errorBanner.textContent =
+			issues.length === 1
+				? issues[0].message
+				: `${issues.length} inputs need attention. Review the highlighted fields.`;
+		resultsPanel.dataset.state = 'invalid';
+		resultsPanel.setAttribute('aria-busy', 'false');
+		resultsContent.classList.add('is-stale');
+		copyButton.disabled = true;
+		liveSummary.textContent = 'Results are paused because one or more inputs are invalid.';
+	}
+
+	function markValid(): void {
+		clearFieldErrors();
+		errorBanner.hidden = true;
+		errorBanner.textContent = '';
+		resultsPanel.dataset.state = 'valid';
+		resultsPanel.setAttribute('aria-busy', 'false');
+		resultsContent.classList.remove('is-stale');
+		copyButton.disabled = false;
+	}
+
+	function setBarWidth(id: string, fraction: number): void {
+		const bar = document.getElementById(id);
+		if (bar) {
+			bar.style.width = `${Math.min(Math.max(fraction * 100, 0), 100)}%`;
+		}
+	}
+
+	function updateTable(result: ThermalModelResult): void {
+		const total = result.totalResistance;
+		const gapShare = result.gapResistance / total;
+		const plateShare = result.plateResistance / total;
+		const backShare = result.backResistance / total;
+
+		setText('res-gap', formatResistance(result.gapResistance));
+		setText('share-gap', formatPercent(gapShare));
+		setText('drop-gap', formatDelta(result.heatFluxWm2 * result.gapResistance));
+		setText('res-gap-cond', formatResistance(result.gapConductionResistance));
+		setText('res-gap-rad', formatResistance(result.gapRadiationResistance));
+		setText('res-plate', formatResistance(result.plateResistance));
+		setText('share-plate', formatPercent(plateShare));
+		setText('drop-plate', formatDelta(result.heatFluxWm2 * result.plateResistance));
+		setText('res-back', formatResistance(result.backResistance));
+		setText('share-back', formatPercent(backShare));
+		setText('drop-back', formatDelta(result.heatFluxWm2 * result.backResistance));
+		setText('res-back-conv', formatResistance(result.backConvectionResistance));
+		setText('res-back-rad', formatResistance(result.backRadiationResistance));
+		setText('res-total', formatResistance(result.totalResistance));
+		setText('drop-total', formatDelta(result.heatFluxWm2 * result.totalResistance));
+		setText('prop-kair', formatProperty(result.airConductivityWmK));
+		setText('prop-epseff', fixedFour.format(result.effectiveGapEmissivity));
+		setText('prop-hgap', formatProperty(result.gapRadiationCoefficient));
+		setText('prop-hback', formatProperty(result.backRadiationCoefficient));
+
+		setBarWidth('bar-gap', gapShare);
+		setBarWidth('bar-plate', plateShare);
+		setBarWidth('bar-back', backShare);
+		setText('bar-gap-value', formatPercent(gapShare));
+		setText('bar-plate-value', formatPercent(plateShare));
+		setText('bar-back-value', formatPercent(backShare));
+	}
+
+	function niceStep(raw: number): number {
+		const exponent = Math.floor(Math.log10(raw));
+		const fraction = raw / 10 ** exponent;
+		const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+		return niceFraction * 10 ** exponent;
+	}
+
+	function svgElement<K extends keyof SVGElementTagNameMap>(
+		tag: K,
+		attributes: Record<string, string | number>,
+	): SVGElementTagNameMap[K] {
+		const element = document.createElementNS(SVG_NS, tag);
+		for (const [name, value] of Object.entries(attributes)) {
+			element.setAttribute(name, String(value));
+		}
+		return element;
+	}
+
+	function renderChart(result: ThermalModelResult, inputs: ThermalModelInputs): void {
+		const left = 58;
+		const right = 26;
+		const top = 24;
+		const plotWidth = 680 - left - right;
+		const plotHeight = 300 - top - 54;
+		const plotRight = left + plotWidth;
+		const plotBottom = top + plotHeight;
+		const xPositions = [
+			left,
+			left + plotWidth / 3,
+			left + (2 * plotWidth) / 3,
+			plotRight,
+		];
+		const temperatures = [
+			inputs.hotTemperatureC,
+			result.frontTemperatureC,
+			result.backTemperatureC,
+			inputs.ambientTemperatureC,
+		];
+		const minimum = Math.min(...temperatures);
+		const maximum = Math.max(...temperatures);
+		const range = Math.max(maximum - minimum, 1);
+		const step = niceStep(range / 4);
+		const axisMin = Math.floor((minimum - range * 0.05) / step) * step;
+		const axisMax = Math.ceil((maximum + range * 0.05) / step) * step;
+		const scaleY = (value: number): number =>
+			plotBottom - ((value - axisMin) / (axisMax - axisMin)) * plotHeight;
+		const tickDigits = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+		const tickFormatter = new Intl.NumberFormat('en-US', {
+			maximumFractionDigits: tickDigits,
+		});
+
+		const grid = byId<SVGGElement>('chart-grid');
+		const yAxis = byId<SVGGElement>('chart-y-axis');
+		grid.replaceChildren();
+		yAxis.replaceChildren();
+
+		const tickCount = Math.min(Math.round((axisMax - axisMin) / step), 20);
+		for (let index = 0; index <= tickCount; index += 1) {
+			const value = axisMin + index * step;
+			const y = scaleY(value);
+			if (y < top - 1 || y > plotBottom + 1) {
+				continue;
+			}
+			grid.append(
+				svgElement('line', {
+					x1: left,
+					y1: y,
+					x2: plotRight,
+					y2: y,
+					class: 'chart-grid-line',
+				}),
+			);
+			const label = svgElement('text', {
+				x: left - 10,
+				y: y + 4,
+				class: 'chart-tick-label',
+				'text-anchor': 'end',
+			});
+			label.textContent = tickFormatter.format(value);
+			yAxis.append(label);
+		}
+
+		const area = byId<SVGPolygonElement>('chart-area');
+		area.setAttribute(
+			'points',
+			[
+				`${left},${plotBottom}`,
+				...xPositions.map((x, index) => `${x},${scaleY(temperatures[index])}`),
+				`${plotRight},${plotBottom}`,
+			].join(' '),
+		);
+
+		const segments = byId<SVGGElement>('chart-segments');
+		segments.replaceChildren();
+		for (let index = 0; index < 3; index += 1) {
+			segments.append(
+				svgElement('line', {
+					x1: xPositions[index],
+					y1: scaleY(temperatures[index]),
+					x2: xPositions[index + 1],
+					y2: scaleY(temperatures[index + 1]),
+					class: `chart-segment ${chartSegmentClasses[index]}`,
+				}),
+			);
+		}
+
+		const points = byId<SVGGElement>('chart-points');
+		points.replaceChildren();
+		for (let index = 0; index < 4; index += 1) {
+			const y = scaleY(temperatures[index]);
+			points.append(
+				svgElement('circle', {
+					cx: xPositions[index],
+					cy: y,
+					r: 5,
+					class: `chart-point ${chartPointClasses[index]}`,
+				}),
+			);
+			const label = svgElement('text', {
+				x: xPositions[index],
+				y: Math.max(top + 12, y - 13),
+				class: 'chart-point-label',
+				'text-anchor': index === 0 ? 'start' : index === 3 ? 'end' : 'middle',
+			});
+			label.textContent = `${fixedOne.format(temperatures[index])} °C`;
+			points.append(label);
+		}
+
+		chartDescription.textContent = `Temperature falls from ${fixedOne.format(temperatures[0])} degrees Celsius at the source to ${fixedOne.format(temperatures[1])} at the foil face, ${fixedOne.format(temperatures[2])} at the composite back and ${fixedOne.format(temperatures[3])} in the ambient.`;
+	}
+
+	function updateResults(result: ThermalModelResult, inputs: ThermalModelInputs): void {
+		setText('heat-flux', formatFlux(result.heatFluxWm2));
+		setText('heat-flux-kw', (result.heatFluxWm2 / 1000).toFixed(3));
+		setText('temp-t1', formatTemperature(result.frontTemperatureC));
+		setText('temp-t2', formatTemperature(result.backTemperatureC));
+
+		if (result.converged) {
+			convergenceBadge.className = 'status-badge is-success';
+			convergenceBadge.textContent = `Converged in ${result.iterations} iterations · residual ${formatResidual(result.errorK)} K`;
+		} else {
+			convergenceBadge.className = 'status-badge is-warning';
+			convergenceBadge.textContent = `Iteration limit reached after ${result.iterations} iterations · results may be approximate`;
+		}
+
+		airFitNote.hidden = !result.airFitOutOfRange;
+		airFitNote.textContent = result.airFitOutOfRange
+			? `Gap mean temperature ${fixedOne.format(result.gapMeanTemperatureK)} K is outside the 300–900 K air-fit range.`
+			: '';
+		airFitNote.className = result.airFitOutOfRange ? 'status-note is-warning' : 'status-note';
+
+		setText('eps-eff-inline', fixedFour.format(result.effectiveGapEmissivity));
+		updateTable(result);
+		renderChart(result, inputs);
+
+		liveSummary.textContent = `Heat flux ${formatFlux(result.heatFluxWm2)} watts per square metre. Foil face ${formatTemperature(result.frontTemperatureC)} degrees Celsius. Composite back ${formatTemperature(result.backTemperatureC)} degrees Celsius. ${result.converged ? `Converged in ${result.iterations} iterations.` : 'The solver did not converge.'}`;
+	}
+
+	function render(): void {
+		const inputs = readInputs();
+		const issues = validateInputs(inputs);
+
+		if (issues.length > 0) {
+			lastResult = null;
+			lastInputs = null;
+			markInvalid(issues);
+			return;
+		}
+
+		let result: ThermalModelResult;
+		try {
+			result = solveThermalModel(inputs);
+		} catch (error) {
+			lastResult = null;
+			lastInputs = null;
+			clearFieldErrors();
+			errorBanner.hidden = false;
+			errorBanner.textContent =
+				error instanceof Error ? error.message : 'Unable to solve the thermal model.';
+			resultsPanel.dataset.state = 'invalid';
+			resultsPanel.setAttribute('aria-busy', 'false');
+			resultsContent.classList.add('is-stale');
+			copyButton.disabled = true;
+			liveSummary.textContent = 'Results are paused because the model could not be solved.';
+			return;
+		}
+
+		lastResult = result;
+		lastInputs = inputs;
+		markValid();
+		updateResults(result, inputs);
+	}
+
+	function scheduleRender(): void {
+		if (scheduledFrame) {
+			cancelAnimationFrame(scheduledFrame);
+		}
+		scheduledFrame = requestAnimationFrame(() => {
+			scheduledFrame = 0;
+			render();
+		});
+	}
+
+	function buildSummary(result: ThermalModelResult, inputs: ThermalModelInputs): string {
+		return [
+			'1D Thermal Resistance Model',
+			`T_hot: ${fixedTwo.format(inputs.hotTemperatureC)} °C`,
+			`T_inf: ${fixedTwo.format(inputs.ambientTemperatureC)} °C`,
+			`Gap: ${fixedTwo.format(inputs.gapThicknessM * 1000)} mm`,
+			`Plate: ${fixedTwo.format(inputs.plateThicknessM * 1000)} mm`,
+			`Plate conductivity: ${formatProperty(inputs.plateConductivityWmK)} W/(m·K)`,
+			'',
+			`Heat flux: ${formatFlux(result.heatFluxWm2)} W/m²`,
+			`Foil face T1: ${formatTemperature(result.frontTemperatureC)} °C`,
+			`Composite back T2: ${formatTemperature(result.backTemperatureC)} °C`,
+			'',
+			`R_gap: ${formatResistance(result.gapResistance)} m²·K/W`,
+			`R_plate: ${formatResistance(result.plateResistance)} m²·K/W`,
+			`R_back: ${formatResistance(result.backResistance)} m²·K/W`,
+			`R_total: ${formatResistance(result.totalResistance)} m²·K/W`,
+			'',
+			result.converged
+				? `Solver: converged in ${result.iterations} iterations`
+				: `Solver: stopped after ${result.iterations} iterations without converging`,
+		].join('\n');
+	}
+
+	async function copyText(text: string): Promise<void> {
+		if (!navigator.clipboard?.writeText) {
+			throw new Error('Clipboard API unavailable');
+		}
+		await navigator.clipboard.writeText(text);
+	}
+
+	function showCopyState(label: string): void {
+		copyButton.textContent = label;
+		window.clearTimeout(copyTimer);
+		copyTimer = window.setTimeout(() => {
+			copyButton.textContent = 'Copy results';
+		}, 1600);
+	}
+
+	copyButton.addEventListener('click', async () => {
+		if (!lastResult || !lastInputs) {
+			return;
+		}
+		const summary = buildSummary(lastResult, lastInputs);
+		try {
+			await copyText(summary);
+			showCopyState('Copied');
+		} catch {
+			showCopyState('Copy failed');
+		}
+	});
+
+	form.addEventListener('input', scheduleRender);
+	form.addEventListener('submit', (event) => {
+		event.preventDefault();
+		render();
+	});
+	form.addEventListener('reset', () => {
+		requestAnimationFrame(() => {
+			advanced.open = false;
+			render();
+		});
+	});
+
+	render();
+</script>
+
+<style is:global>
+	.thermal-app {
+		width: 100%;
+		max-width: 1180px;
+		margin: 0 auto;
+		padding: 44px 24px 52px;
+	}
+
+	.thermal-app .app-header {
+		max-width: 860px;
+		margin-bottom: 30px;
+	}
+
+	.thermal-app .brand-line {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-bottom: 18px;
+	}
+
+	.thermal-app .brand-mark {
+		display: inline-flex;
+		width: 44px;
+		height: 44px;
+		filter: drop-shadow(0 8px 16px rgba(194, 65, 12, 0.25));
+	}
+
+	.thermal-app .brand-mark svg {
+		width: 100%;
+		height: 100%;
+	}
+
+	.thermal-app .eyebrow {
+		font-size: 0.74rem;
+		font-weight: 700;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+
+	.thermal-app h1 {
+		margin: 0;
+		font-size: clamp(2.15rem, 5vw, 3.65rem);
+		line-height: 1.03;
+		letter-spacing: -0.045em;
+		font-weight: 760;
+	}
+
+	.thermal-app .lede {
+		max-width: 64ch;
+		margin: 16px 0 0;
+		font-size: 1.02rem;
+		line-height: 1.65;
+		color: var(--muted);
+	}
+
+	.thermal-app .feature-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin: 20px 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.thermal-app .feature-tags li {
+		padding: 5px 10px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--panel);
+		color: var(--muted);
+		font-size: 0.74rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+	}
+
+	.thermal-app .calculator-grid {
+		display: grid;
+		grid-template-columns: minmax(330px, 0.84fr) minmax(0, 1.4fr);
+		gap: 22px;
+		align-items: start;
+	}
+
+	.thermal-app .panel {
+		position: relative;
+		background: var(--panel);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow);
+		padding: 24px;
+	}
+
+	.thermal-app .panel-heading {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16px;
+		margin-bottom: 14px;
+	}
+
+	.thermal-app .panel-heading h2 {
+		margin: 0;
+		font-size: 1.18rem;
+		letter-spacing: -0.02em;
+	}
+
+	.thermal-app .panel-subtitle {
+		margin: 3px 0 0;
+		color: var(--muted);
+		font-size: 0.77rem;
+	}
+
+	.thermal-app .panel-badge {
+		flex: none;
+		padding: 4px 9px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--panel-soft);
+		color: var(--muted);
+		font-size: 0.67rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app .panel-note {
+		margin: 0 0 20px;
+		padding: 10px 12px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--panel-soft);
+		color: var(--muted);
+		font-size: 0.8rem;
+		line-height: 1.5;
+	}
+
+	.thermal-app code {
+		font-family: var(--font-mono);
+		font-size: 0.9em;
+		color: var(--text);
+	}
+
+	.thermal-app .input-group {
+		min-width: 0;
+		margin: 0 0 22px;
+		padding: 0;
+		border: 0;
+	}
+
+	.thermal-app .input-group legend {
+		width: 100%;
+		margin-bottom: 11px;
+		padding: 0;
+		color: var(--text);
+		font-size: 0.73rem;
+		font-weight: 750;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app .field-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 14px;
+	}
+
+	.thermal-app .field-span-full {
+		grid-column: 1 / -1;
+	}
+
+	.thermal-app .field {
+		min-width: 0;
+	}
+
+	.thermal-app .field-label-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 10px;
+		margin-bottom: 6px;
+	}
+
+	.thermal-app .field label {
+		color: var(--text);
+		font-size: 0.83rem;
+		font-weight: 600;
+		line-height: 1.35;
+	}
+
+	.thermal-app .unit {
+		flex: none;
+		color: var(--muted);
+		font-size: 0.68rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+
+	.thermal-app input[type='number'] {
+		width: 100%;
+		min-height: 42px;
+		padding: 9px 11px;
+		border: 1px solid var(--border-strong);
+		border-radius: 10px;
+		background: var(--panel-soft);
+		color: var(--text);
+		font: inherit;
+		font-size: 0.94rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		transition:
+			border-color 160ms ease,
+			box-shadow 160ms ease,
+			background-color 160ms ease;
+	}
+
+	.thermal-app input[type='number']:hover {
+		border-color: color-mix(in srgb, var(--border-strong), var(--text) 18%);
+	}
+
+	.thermal-app input[type='number']:focus-visible {
+		outline: none;
+		border-color: var(--accent);
+		background: var(--panel);
+		box-shadow: 0 0 0 3px var(--accent-ring);
+	}
+
+	.thermal-app input[aria-invalid='true'] {
+		border-color: var(--danger);
+		background: var(--danger-soft);
+	}
+
+	.thermal-app input[aria-invalid='true']:focus-visible {
+		box-shadow: 0 0 0 3px var(--danger-ring);
+	}
+
+	.thermal-app .field-help {
+		margin: 5px 0 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.45;
+	}
+
+	.thermal-app .field-error {
+		margin: 5px 0 0;
+		color: var(--danger);
+		font-size: 0.72rem;
+		font-weight: 600;
+		line-height: 1.45;
+	}
+
+	.thermal-app .advanced {
+		margin-top: 4px;
+		border-top: 1px solid var(--border);
+		padding-top: 16px;
+	}
+
+	.thermal-app .advanced summary {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		cursor: pointer;
+		list-style: none;
+		color: var(--text);
+		font-size: 0.87rem;
+		font-weight: 700;
+	}
+
+	.thermal-app .advanced summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.thermal-app .summary-hint {
+		margin-left: auto;
+		color: var(--muted);
+		font-size: 0.68rem;
+		font-weight: 500;
+	}
+
+	.thermal-app .chevron {
+		width: 8px;
+		height: 8px;
+		margin-right: 3px;
+		border-right: 2px solid var(--muted);
+		border-bottom: 2px solid var(--muted);
+		transform: rotate(45deg);
+		transition: transform 160ms ease;
+	}
+
+	.thermal-app .advanced[open] .chevron {
+		transform: rotate(225deg) translate(-2px, -2px);
+	}
+
+	.thermal-app .advanced summary:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 4px;
+		border-radius: 4px;
+	}
+
+	.thermal-app .advanced-body {
+		padding-top: 20px;
+	}
+
+	.thermal-app .advanced-body .input-group:last-of-type {
+		margin-bottom: 12px;
+	}
+
+	.thermal-app .fit-note,
+	.thermal-app .computed-note {
+		margin: 10px 0 0;
+		color: var(--muted);
+		font-size: 0.72rem;
+		line-height: 1.5;
+	}
+
+	.thermal-app .computed-note {
+		padding: 9px 11px;
+		border: 1px dashed var(--border-strong);
+		border-radius: 9px;
+		background: var(--panel-soft);
+	}
+
+	.thermal-app .computed-note strong {
+		color: var(--accent);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .form-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+		margin-top: 22px;
+	}
+
+	.thermal-app .button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 42px;
+		padding: 10px 16px;
+		border: 1px solid transparent;
+		border-radius: 10px;
+		font: inherit;
+		font-size: 0.83rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition:
+			transform 140ms ease,
+			box-shadow 140ms ease,
+			background-color 140ms ease,
+			border-color 140ms ease;
+	}
+
+	.thermal-app .button:active {
+		transform: translateY(1px);
+	}
+
+	.thermal-app .button:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.thermal-app .button:disabled {
+		cursor: not-allowed;
+		opacity: 0.55;
+	}
+
+	.thermal-app .button-primary {
+		flex: 1 1 150px;
+		color: #fff;
+		background: linear-gradient(135deg, #f76707, #c2410c);
+		box-shadow: 0 10px 22px -12px rgba(194, 65, 12, 0.75);
+	}
+
+	.thermal-app .button-primary:hover:not(:disabled) {
+		box-shadow: 0 13px 26px -12px rgba(194, 65, 12, 0.9);
+	}
+
+	.thermal-app .button-ghost {
+		flex: 0 1 auto;
+		border-color: var(--border-strong);
+		background: var(--panel-soft);
+		color: var(--text);
+	}
+
+	.thermal-app .button-ghost:hover {
+		border-color: var(--text);
+	}
+
+	.thermal-app .privacy-note {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		margin: 16px 0 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.45;
+	}
+
+	.thermal-app .privacy-dot {
+		width: 6px;
+		height: 6px;
+		flex: none;
+		border-radius: 50%;
+		background: var(--success);
+		box-shadow: 0 0 0 3px var(--success-soft);
+	}
+
+	.thermal-app .results-panel {
+		min-width: 0;
+	}
+
+	.thermal-app .live-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		flex: none;
+		padding: 5px 10px;
+		border-radius: 999px;
+		background: var(--success-soft);
+		color: var(--success);
+		font-size: 0.67rem;
+		font-weight: 750;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app .live-pill > span {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: currentColor;
+	}
+
+	.thermal-app .error-banner {
+		margin: 0 0 16px;
+		padding: 11px 13px;
+		border: 1px solid var(--danger-ring);
+		border-radius: 10px;
+		background: var(--danger-soft);
+		color: var(--danger);
+		font-size: 0.8rem;
+		font-weight: 600;
+		line-height: 1.5;
+	}
+
+	.thermal-app .noscript-note {
+		margin: 0 0 16px;
+		padding: 11px 13px;
+		border: 1px solid var(--warning-ring);
+		border-radius: 10px;
+		background: var(--warning-soft);
+		color: var(--warning);
+		font-size: 0.8rem;
+		line-height: 1.5;
+	}
+
+	.thermal-app .results-content {
+		transition: opacity 180ms ease;
+	}
+
+	.thermal-app .results-content.is-stale {
+		opacity: 0.45;
+	}
+
+	.thermal-app .result-hero {
+		padding: 20px;
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		background:
+			radial-gradient(120% 160% at 100% 0%, var(--accent-glow), transparent 58%),
+			linear-gradient(135deg, var(--accent-soft), var(--panel-soft));
+	}
+
+	.thermal-app .hero-heading {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.thermal-app .result-label {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.72rem;
+		font-weight: 750;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app .symbol {
+		color: var(--accent);
+		font-size: 0.85rem;
+		letter-spacing: 0;
+	}
+
+	.thermal-app .hero-unit {
+		color: var(--muted);
+		font-size: 0.68rem;
+		font-weight: 500;
+	}
+
+	.thermal-app .hero-value {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		margin: 4px 0 0;
+		color: var(--text);
+		font-size: clamp(2.4rem, 6vw, 3.7rem);
+		font-weight: 780;
+		line-height: 1;
+		letter-spacing: -0.055em;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .hero-metric {
+		color: var(--muted);
+		font-size: 0.9rem;
+		font-weight: 600;
+		letter-spacing: 0;
+	}
+
+	.thermal-app .hero-secondary {
+		margin: 6px 0 0;
+		color: var(--muted);
+		font-size: 0.77rem;
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .temp-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 12px;
+		margin-top: 12px;
+	}
+
+	.thermal-app .temp-card {
+		min-width: 0;
+		padding: 14px 16px;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: var(--panel-soft);
+	}
+
+	.thermal-app .temp-card.is-hot {
+		box-shadow: inset 3px 0 0 var(--accent);
+	}
+
+	.thermal-app .temp-card.is-cool {
+		box-shadow: inset 3px 0 0 var(--cool);
+	}
+
+	.thermal-app .temp-label {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.71rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app .temp-value {
+		display: flex;
+		align-items: baseline;
+		gap: 4px;
+		margin: 4px 0 0;
+		font-size: 1.65rem;
+		font-weight: 750;
+		line-height: 1;
+		letter-spacing: -0.035em;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .temp-unit {
+		color: var(--muted);
+		font-size: 0.75rem;
+		font-weight: 600;
+		letter-spacing: 0;
+	}
+
+	.thermal-app .temp-meta {
+		margin: 5px 0 0;
+		color: var(--muted);
+		font-size: 0.68rem;
+	}
+
+	.thermal-app .status-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-top: 12px;
+	}
+
+	.thermal-app .status-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 6px 10px;
+		border-radius: 999px;
+		font-size: 0.7rem;
+		font-weight: 650;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .status-badge::before {
+		content: '';
+		width: 6px;
+		height: 6px;
+		flex: none;
+		border-radius: 50%;
+		background: currentColor;
+	}
+
+	.thermal-app .status-badge.is-success {
+		background: var(--success-soft);
+		color: var(--success);
+	}
+
+	.thermal-app .status-badge.is-warning {
+		background: var(--warning-soft);
+		color: var(--warning);
+	}
+
+	.thermal-app .status-note {
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.45;
+	}
+
+	.thermal-app .status-note.is-warning {
+		color: var(--warning);
+		font-weight: 600;
+	}
+
+	.thermal-app .chart-card {
+		margin: 18px 0 0;
+		padding: 16px;
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		background: var(--panel-soft);
+	}
+
+	.thermal-app .chart-heading {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.thermal-app .chart-heading h3 {
+		margin: 0;
+		font-size: 0.93rem;
+		letter-spacing: -0.015em;
+	}
+
+	.thermal-app .chart-heading p {
+		margin: 3px 0 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+	}
+
+	.thermal-app .chart-unit {
+		flex: none;
+		padding: 3px 8px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-weight: 650;
+	}
+
+	.thermal-app .resistance-bar {
+		display: flex;
+		width: 100%;
+		height: 9px;
+		margin-top: 14px;
+		overflow: hidden;
+		border-radius: 999px;
+		background: var(--border);
+	}
+
+	.thermal-app .bar-segment {
+		display: block;
+		height: 100%;
+		width: 0;
+		transition: width 220ms ease;
+	}
+
+	.thermal-app .bar-segment.is-gap,
+	.thermal-app .swatch.is-gap {
+		background: var(--accent);
+	}
+
+	.thermal-app .bar-segment.is-plate,
+	.thermal-app .swatch.is-plate {
+		background: var(--accent-2);
+	}
+
+	.thermal-app .bar-segment.is-back,
+	.thermal-app .swatch.is-back {
+		background: var(--cool);
+	}
+
+	.thermal-app .bar-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 16px;
+		margin-top: 9px;
+		color: var(--muted);
+		font-size: 0.69rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .bar-legend > span {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+
+	.thermal-app .bar-legend strong {
+		color: var(--text);
+		font-weight: 650;
+	}
+
+	.thermal-app .swatch {
+		width: 7px;
+		height: 7px;
+		border-radius: 2px;
+	}
+
+	.thermal-app #temp-chart {
+		display: block;
+		width: 100%;
+		height: auto;
+		margin-top: 4px;
+		overflow: visible;
+	}
+
+	.thermal-app .chart-grid-line {
+		stroke: var(--border);
+		stroke-width: 1;
+		stroke-dasharray: 3 4;
+	}
+
+	.thermal-app .chart-tick-label {
+		fill: var(--muted);
+		font-family: var(--font-sans);
+		font-size: 10.5px;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app #chart-area {
+		fill: var(--accent);
+		opacity: 0.075;
+	}
+
+	.thermal-app .chart-segment {
+		stroke-width: 3;
+		stroke-linecap: round;
+	}
+
+	.thermal-app .chart-segment.segment-gap {
+		stroke: var(--accent);
+	}
+
+	.thermal-app .chart-segment.segment-plate {
+		stroke: var(--accent-2);
+	}
+
+	.thermal-app .chart-segment.segment-back {
+		stroke: var(--cool);
+	}
+
+	.thermal-app .chart-point {
+		fill: var(--panel);
+		stroke-width: 2.5;
+	}
+
+	.thermal-app .chart-point.point-hot {
+		stroke: var(--accent);
+	}
+
+	.thermal-app .chart-point.point-warm {
+		stroke: var(--accent-2);
+	}
+
+	.thermal-app .chart-point.point-cool {
+		stroke: var(--cool);
+	}
+
+	.thermal-app .chart-point-label {
+		fill: var(--text);
+		font-family: var(--font-sans);
+		font-size: 11px;
+		font-weight: 650;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .chart-x-label {
+		fill: var(--text);
+		font-family: var(--font-sans);
+		font-size: 10.5px;
+		font-weight: 600;
+	}
+
+	.thermal-app .chart-x-sub {
+		fill: var(--muted);
+		font-family: var(--font-sans);
+		font-size: 9.5px;
+	}
+
+	.thermal-app .chart-note {
+		margin: 4px 0 0;
+		color: var(--muted);
+		font-size: 0.66rem;
+		line-height: 1.5;
+	}
+
+	.thermal-app .breakdown {
+		margin-top: 20px;
+	}
+
+	.thermal-app .section-heading {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 10px;
+	}
+
+	.thermal-app .section-heading h3 {
+		margin: 0;
+		font-size: 0.93rem;
+		letter-spacing: -0.015em;
+	}
+
+	.thermal-app .section-heading > span {
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-weight: 600;
+	}
+
+	.thermal-app .table-wrap {
+		overflow-x: auto;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+	}
+
+	.thermal-app table {
+		width: 100%;
+		min-width: 440px;
+		border-collapse: collapse;
+		font-size: 0.81rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app th,
+	.thermal-app td {
+		padding: 9px 11px;
+		border-top: 1px solid var(--border);
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	.thermal-app thead th {
+		border-top: 0;
+		background: var(--panel-soft);
+		color: var(--muted);
+		font-size: 0.65rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.thermal-app th:first-child,
+	.thermal-app td:first-child {
+		text-align: left;
+	}
+
+	.thermal-app tbody th {
+		font-weight: 600;
+		color: var(--text);
+	}
+
+	.thermal-app .sub-row th,
+	.thermal-app .sub-row td {
+		padding-top: 6px;
+		padding-bottom: 6px;
+		color: var(--muted);
+		font-size: 0.73rem;
+		font-weight: 500;
+		background: color-mix(in srgb, var(--panel-soft) 45%, transparent);
+	}
+
+	.thermal-app .sub-row th {
+		padding-left: 22px;
+	}
+
+	.thermal-app .total-row th,
+	.thermal-app .total-row td {
+		border-top: 2px solid var(--border-strong);
+		background: var(--panel-soft);
+		font-weight: 750;
+	}
+
+	.thermal-app .property-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 7px;
+		margin-top: 11px;
+	}
+
+	.thermal-app .chip {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 4px;
+		padding: 5px 9px;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--panel-soft);
+		color: var(--muted);
+		font-size: 0.67rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .chip strong {
+		color: var(--text);
+		font-weight: 700;
+	}
+
+	.thermal-app .method {
+		margin-top: 20px;
+		padding-top: 16px;
+		border-top: 1px solid var(--border);
+	}
+
+	.thermal-app .method summary {
+		cursor: pointer;
+		color: var(--text);
+		font-size: 0.84rem;
+		font-weight: 700;
+		list-style: none;
+	}
+
+	.thermal-app .method summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.thermal-app .method summary::before {
+		content: '+';
+		display: inline-block;
+		width: 16px;
+		color: var(--accent);
+		font-weight: 750;
+	}
+
+	.thermal-app .method[open] summary::before {
+		content: '−';
+	}
+
+	.thermal-app .method summary:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 4px;
+		border-radius: 4px;
+	}
+
+	.thermal-app .method-body {
+		padding-top: 12px;
+		color: var(--muted);
+		font-size: 0.77rem;
+		line-height: 1.6;
+	}
+
+	.thermal-app .method-body p {
+		margin: 0 0 10px;
+	}
+
+	.thermal-app .formula-list {
+		display: grid;
+		gap: 6px;
+		margin: 10px 0 12px;
+	}
+
+	.thermal-app .formula-list code {
+		display: block;
+		padding: 8px 10px;
+		overflow-x: auto;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--panel-soft);
+		color: var(--text);
+		font-size: 0.71rem;
+		white-space: nowrap;
+	}
+
+	.thermal-app .assumption-list {
+		margin: 0 0 12px;
+		padding-left: 18px;
+	}
+
+	.thermal-app .assumption-list li {
+		margin-bottom: 4px;
+	}
+
+	.thermal-app .model-reference {
+		margin-bottom: 0 !important;
+		font-size: 0.7rem;
+	}
+
+	.thermal-app .app-footer {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 8px 20px;
+		margin-top: 26px;
+		padding-top: 16px;
+		border-top: 1px solid var(--border);
+		color: var(--muted);
+		font-size: 0.7rem;
+	}
+
+	.thermal-app .app-footer p {
+		margin: 0;
+	}
+
+	.thermal-app .app-footer p:last-child {
+		font-weight: 600;
+	}
+
+	.thermal-app .sr-only {
+		position: absolute !important;
+		width: 1px !important;
+		height: 1px !important;
+		padding: 0 !important;
+		margin: -1px !important;
+		overflow: hidden !important;
+		clip: rect(0, 0, 0, 0) !important;
+		white-space: nowrap !important;
+		border: 0 !important;
+	}
+
+	@media (max-width: 900px) {
+		.thermal-app {
+			padding: 30px 18px 40px;
+		}
+
+		.thermal-app .calculator-grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.thermal-app .panel {
+			padding: 20px;
+		}
+	}
+
+	@media (max-width: 560px) {
+		.thermal-app {
+			padding: 24px 12px 32px;
+		}
+
+		.thermal-app .field-grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.thermal-app .temp-grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.thermal-app .summary-hint {
+			display: none;
+		}
+
+		.thermal-app .hero-value {
+			font-size: clamp(2.2rem, 13vw, 3rem);
+		}
+
+		.thermal-app .chart-card {
+			padding: 12px;
+		}
+
+		.thermal-app .panel {
+			padding: 18px 16px;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.thermal-app *,
+		.thermal-app *::before,
+		.thermal-app *::after {
+			scroll-behavior: auto !important;
+			transition-duration: 0.01ms !important;
+			animation-duration: 0.01ms !important;
+		}
+	}
+</style>
