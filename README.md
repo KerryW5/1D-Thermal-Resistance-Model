@@ -1,32 +1,38 @@
 # 1D Thermal Network Calculator
 
-A static, client-side calculator for steady-state heat transfer through a configurable series
-network of materials and interfaces.
+A static, client-side calculator for heat transfer through a configurable series network of
+materials and interfaces. It supports two calculation modes:
 
-The original Python model is preserved in `source_model/model.py`. The web app generalises it into a
-node-based stack: a heat source, any number of material layers, and an ambient sink. Every connection
-between nodes can be an air gap, a bonded contact, an adhesive layer, or a specified contact
-resistance.
+- **Steady state** — solve the converged node temperatures and the constant heat flux
+- **Transient** — step the thermal masses forward in time from `t = 0`
+
+The original Python steady-state model is preserved in `source_model/model.py`. A new Python
+transient reference implementation is in `source_model/transient_model.py`. Both are ported to
+TypeScript for the web app.
 
 All calculation happens in the browser. There is no API, database, or server runtime, so the built
 site can be hosted on any static file host.
 
 ## Features
 
+- Switch between steady-state and transient calculation
+- Transient time step and final time default to **5 s** and **60 s**
 - Add, remove and reorder material layers
 - Material presets for carbon fibre, Nomex honeycomb, glass fibre, aluminium, stainless steel, aerogel and custom materials
+- Density and specific heat fields for transient thermal mass
 - Connection types: air gap, bonded, adhesive layer and contact resistance
 - Per-side surface finishes: bare material, reflective foil or custom emissivity
 - Air-gap conduction in parallel with linearised radiation
 - Back-surface convection and radiation at the ambient boundary
 - Live heat flux, node temperatures, resistance breakdown and temperature-profile chart
-- Convergence status and air-fit range warning
+- Transient temperature-history chart and time-history table
+- Convergence status, air-fit range warning and transient completion status
 - Network templates, including the original single-layer Python benchmark
 - Accessible, responsive light/dark UI with no runtime dependencies beyond Astro
 
 ## Default example
 
-The app opens with the **Carbon fibre + Nomex example**:
+The app opens in steady-state mode with the **Carbon fibre + Nomex example**:
 
 1. Node 1 — heat source at 600 °C
 2. 40 mm air gap
@@ -35,7 +41,7 @@ The app opens with the **Carbon fibre + Nomex example**:
 5. Node 3 — Nomex honeycomb, 10 mm, `k = 0.06 W/(m·K)`
 6. Ambient boundary at 30 °C with `h_conv = 5 W/(m²·K)`
 
-Approximate default result:
+Approximate steady-state result:
 
 - Heat flux: `1460.84 W/m²`
 - Carbon fibre front/back: `381.32 / 375.84 °C`
@@ -48,6 +54,31 @@ The **Source model · 1 layer** template reproduces the original Python benchmar
 - Foil-face temperature `T1`: `173.39 °C`
 - Composite-back temperature `T2`: `165.50 °C`
 - Total resistance: `0.2710 m²·K/W`
+
+## Transient model
+
+Transient mode starts all layer nodes at the selected initial temperature (default `30 °C`) and
+holds the heat source at `T_hot` and the ambient boundary at `T_inf` for the whole run.
+
+Each layer receives an areal thermal capacitance:
+
+```text
+C″ = ρ · cp · L
+```
+
+Half of that capacitance is assigned to the layer front node and half to the back node. The network
+resistances are the same as in steady state. The solver uses implicit backward Euler at the selected
+time step, which remains stable for stiff material combinations such as thin metals.
+
+The default example produces the following transient results with `Δt = 5 s`, `t_final = 60 s`, and
+an initial temperature of `30 °C`:
+
+- Carbon fibre mean at 60 s: `56.36 °C` (front `58.70 °C`, back `54.02 °C`)
+- Nomex mean at 60 s: `45.07 °C` (front `54.02 °C`, back `36.12 °C`)
+- Ambient heat flux at 60 s: `66.42 W/m²`
+
+The transient solution approaches the steady-state result when the final time is extended
+sufficiently.
 
 ## Model notes
 
@@ -68,11 +99,13 @@ calculated from the facing surface finishes. A surface set to **Bare** uses the 
 
 Other assumptions:
 
-- Steady-state, one-dimensional heat transfer with uniform heat flux
-- Constant material conductivity
+- One-dimensional heat transfer with uniform heat flux in steady state
+- Constant material conductivity, density and specific heat
 - No contact resistance for bonded connections
 - Air conductivity uses the linear fit `k_air = 0.0243 + 7.7e-5 · T[°C]`, intended for roughly 300–900 K
-- Damped fixed-point iteration solves the temperature-dependent resistances
+- Steady state uses damped fixed-point iteration
+- Transient mode uses implicit backward Euler with temperature-dependent resistances lagged at each step
+- Transient ΔT values are instantaneous surface differences at the final time
 
 ## Development
 
@@ -112,7 +145,8 @@ If the site will be served from a subpath, configure Astro's
 
 ```text
 source_model/
-  model.py              Reference Python implementation
+  model.py              Reference steady-state Python implementation
+  transient_model.py    Reference transient Python implementation
   model.md              Original model notes and equations
 src/
   components/
@@ -120,7 +154,7 @@ src/
   layouts/
     Layout.astro        Page shell and design tokens
   lib/
-    thermalModel.ts     Generalised series-network solver and validation
+    thermalModel.ts     Steady and transient series-network solvers
     networkConfig.ts    Materials, templates, surface finishes and UI-state validation
   pages/
     index.astro         Single-page calculator route
@@ -135,6 +169,10 @@ public/
 
 - Temperatures: °C
 - Lengths in inputs: mm
+- Time: seconds
 - Conductivity: W/(m·K)
+- Density: kg/m³
+- Specific heat: J/(kg·K)
+- Areal thermal capacitance: J/(m²·K)
 - Areal resistance: m²·K/W
 - Heat flux: W/m²

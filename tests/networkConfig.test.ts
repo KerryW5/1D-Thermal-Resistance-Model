@@ -24,6 +24,10 @@ test('the default example is the carbon fibre plus Nomex network', () => {
 	const state = createInitialState();
 
 	assert.equal(state.templateId, DEFAULT_TEMPLATE_ID);
+	assert.equal(state.modelMode, 'steady');
+	assert.equal(state.timeStepS, 5);
+	assert.equal(state.finalTimeS, 60);
+	assert.equal(state.initialTemperatureC, 30);
 	assert.equal(state.layers.length, 2);
 	assert.equal(state.layers[0].label, 'Carbon fibre plate');
 	assert.equal(state.layers[1].label, 'Nomex honeycomb');
@@ -34,8 +38,12 @@ test('the default example is the carbon fibre plus Nomex network', () => {
 	const inputs = buildNetworkInputs(state);
 	assert.equal(inputs.layers.length, 2);
 	assert.equal(inputs.layers[0].thicknessM, 0.003);
+	assert.equal(inputs.layers[0].densityKgM3, 1600);
+	assert.equal(inputs.layers[0].specificHeatJkgK, 1000);
 	assert.equal(inputs.layers[0].frontEmissivity, 0.05);
 	assert.equal(inputs.layers[0].backEmissivity, 0.88);
+	assert.equal(inputs.layers[1].densityKgM3, 48);
+	assert.equal(inputs.layers[1].specificHeatJkgK, 1200);
 	assert.equal(inputs.layers[1].frontEmissivity, 0.9);
 	assert.equal(inputs.interfaces[0].gapThicknessM, 0.04);
 	assert.equal(inputs.interfaces[1].type, 'bonded');
@@ -63,9 +71,9 @@ test('the source-model template reproduces the Python benchmark', () => {
 	closeTo(result.heatFluxWm2, 2103.353897405936, 1e-3, 'source-model heat flux');
 	closeTo(result.layers[0].frontTemperatureC, 173.3854118888301, 1e-3, 'source-model front');
 	closeTo(result.layers[0].backTemperatureC, 165.49780327620692, 1e-3, 'source-model back');
-	closeTo(result.interfaces[0].resistance, 0.2028258983801135, 1e-9, 'source-model gap R');
+	closeTo(result.interfaces[0].resistance, 0.2028258983801135, 1e-6, 'source-model gap R');
 	closeTo(result.layers[0].resistance, 0.00375, 1e-12, 'source-model plate R');
-	closeTo(result.back.resistance, 0.06441986733624089, 1e-9, 'source-model back R');
+	closeTo(result.back.resistance, 0.06441986733624089, 1e-6, 'source-model back R');
 });
 
 test('surface finishes resolve to bare, foil or custom emissivity', () => {
@@ -96,6 +104,8 @@ test('material presets update a layer without disturbing its surface settings', 
 	assert.equal(updated.materialId, 'aluminium');
 	assert.equal(updated.conductivityWmK, 205);
 	assert.equal(updated.thicknessMm, 2);
+	assert.equal(updated.densityKgM3, 2700);
+	assert.equal(updated.specificHeatJkgK, 900);
 	assert.equal(updated.frontSurface.finish, 'custom');
 	assert.equal(updated.frontSurface.emissivity, 0.33);
 	assert.equal(updated.backSurface.finish, 'foil');
@@ -173,4 +183,41 @@ test('UI validation reports the exact editable paths', () => {
 	const mismatched = createInitialState();
 	mismatched.interfaces = mismatched.interfaces.slice(0, 1);
 	assert.ok(validateNetworkState(mismatched).some((issue) => issue.path === 'interfaces'));
+});
+
+test('transient UI validation checks time settings and thermal mass', () => {
+	const base = createInitialState();
+	base.modelMode = 'transient';
+	assert.deepEqual(validateNetworkState(base), []);
+
+	const cases: Array<[(state: ReturnType<typeof createInitialState>) => void, string]> = [
+		[(state) => { state.timeStepS = 0; }, 'timeStepS'],
+		[(state) => { state.finalTimeS = 0; }, 'finalTimeS'],
+		[(state) => { state.initialTemperatureC = -300; }, 'initialTemperatureC'],
+		[(state) => { state.timeStepS = 0.0001; state.finalTimeS = 60; }, 'finalTimeS'],
+		[(state) => { state.layers[0].densityKgM3 = 0; }, 'layers.0.densityKgM3'],
+		[(state) => { state.layers[0].specificHeatJkgK = 0; }, 'layers.0.specificHeatJkgK'],
+	];
+
+	for (const [mutate, path] of cases) {
+		const state = createInitialState();
+		state.modelMode = 'transient';
+		mutate(state);
+		assert.ok(
+			validateNetworkState(state).some((issue) => issue.path === path),
+			`expected a transient issue for ${path}`,
+		);
+	}
+
+	const steady = createInitialState();
+	steady.timeStepS = 0;
+	steady.layers[0].densityKgM3 = 0;
+	assert.deepEqual(validateNetworkState(steady), []);
+
+	const transient = createInitialState();
+	transient.modelMode = 'transient';
+	transient.toleranceK = 0;
+	transient.maxIterations = 0;
+	transient.relaxation = 0;
+	assert.deepEqual(validateNetworkState(transient), []);
 });

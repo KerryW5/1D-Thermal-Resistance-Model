@@ -1,12 +1,14 @@
 import {
 	ABSOLUTE_ZERO_C,
 	MAX_LAYERS,
+	MAX_TRANSIENT_OUTPUT_STEPS,
 	type InterfaceType,
 	type NetworkInputs,
 	type ValidationIssue,
 } from './thermalModel.ts';
 
 export type SurfaceFinish = 'bare' | 'foil' | 'custom';
+export type ModelMode = 'steady' | 'transient';
 
 export interface SurfaceState {
 	finish: SurfaceFinish;
@@ -19,6 +21,8 @@ export interface LayerState {
 	materialId: string;
 	thicknessMm: number;
 	conductivityWmK: number;
+	densityKgM3: number;
+	specificHeatJkgK: number;
 	bareEmissivity: number;
 	frontSurface: SurfaceState;
 	backSurface: SurfaceState;
@@ -34,6 +38,10 @@ export interface InterfaceState {
 
 export interface NetworkState {
 	templateId: string;
+	modelMode: ModelMode;
+	timeStepS: number;
+	finalTimeS: number;
+	initialTemperatureC: number;
 	sourceTemperatureC: number;
 	sourceBareEmissivity: number;
 	sourceSurface: SurfaceState;
@@ -54,6 +62,8 @@ export interface MaterialPreset {
 	name: string;
 	description: string;
 	conductivityWmK: number;
+	densityKgM3: number;
+	specificHeatJkgK: number;
 	bareEmissivity: number;
 	defaultThicknessMm: number;
 }
@@ -78,6 +88,12 @@ export const ADVANCED_DEFAULTS = {
 	toleranceK: 1e-4,
 	maxIterations: 1000,
 	relaxation: 0.5,
+} as const;
+
+export const TRANSIENT_DEFAULTS = {
+	timeStepS: 5,
+	finalTimeS: 60,
+	initialTemperatureC: 30,
 } as const;
 
 export const SOURCE_BARE_EMISSIVITY = 0.9;
@@ -109,6 +125,8 @@ export const MATERIAL_PRESETS: ReadonlyArray<MaterialPreset> = [
 		name: 'Carbon fibre composite',
 		description: 'Through-thickness composite conductivity.',
 		conductivityWmK: 0.8,
+		densityKgM3: 1600,
+		specificHeatJkgK: 1000,
 		bareEmissivity: 0.88,
 		defaultThicknessMm: 3,
 	},
@@ -117,6 +135,8 @@ export const MATERIAL_PRESETS: ReadonlyArray<MaterialPreset> = [
 		name: 'Nomex honeycomb',
 		description: 'Lightweight honeycomb core.',
 		conductivityWmK: 0.06,
+		densityKgM3: 48,
+		specificHeatJkgK: 1200,
 		bareEmissivity: 0.9,
 		defaultThicknessMm: 10,
 	},
@@ -125,6 +145,8 @@ export const MATERIAL_PRESETS: ReadonlyArray<MaterialPreset> = [
 		name: 'Glass fibre composite',
 		description: 'Through-thickness laminate conductivity.',
 		conductivityWmK: 0.4,
+		densityKgM3: 1900,
+		specificHeatJkgK: 1000,
 		bareEmissivity: 0.9,
 		defaultThicknessMm: 3,
 	},
@@ -133,6 +155,8 @@ export const MATERIAL_PRESETS: ReadonlyArray<MaterialPreset> = [
 		name: 'Aluminium',
 		description: 'Bare metal surface.',
 		conductivityWmK: 205,
+		densityKgM3: 2700,
+		specificHeatJkgK: 900,
 		bareEmissivity: 0.1,
 		defaultThicknessMm: 2,
 	},
@@ -141,6 +165,8 @@ export const MATERIAL_PRESETS: ReadonlyArray<MaterialPreset> = [
 		name: 'Stainless steel',
 		description: 'Bare stainless surface.',
 		conductivityWmK: 16,
+		densityKgM3: 7900,
+		specificHeatJkgK: 500,
 		bareEmissivity: 0.2,
 		defaultThicknessMm: 1,
 	},
@@ -149,6 +175,8 @@ export const MATERIAL_PRESETS: ReadonlyArray<MaterialPreset> = [
 		name: 'Aerogel blanket',
 		description: 'High-performance insulation.',
 		conductivityWmK: 0.015,
+		densityKgM3: 120,
+		specificHeatJkgK: 1000,
 		bareEmissivity: 0.9,
 		defaultThicknessMm: 10,
 	},
@@ -157,6 +185,8 @@ export const MATERIAL_PRESETS: ReadonlyArray<MaterialPreset> = [
 		name: 'Custom material',
 		description: 'Enter your own properties.',
 		conductivityWmK: 0.5,
+		densityKgM3: 1000,
+		specificHeatJkgK: 1000,
 		bareEmissivity: 0.9,
 		defaultThicknessMm: 5,
 	},
@@ -202,6 +232,8 @@ export function createLayer(
 		materialId: material.id,
 		thicknessMm: material.defaultThicknessMm,
 		conductivityWmK: material.conductivityWmK,
+		densityKgM3: material.densityKgM3,
+		specificHeatJkgK: material.specificHeatJkgK,
 		bareEmissivity: material.bareEmissivity,
 		frontSurface: surface(),
 		backSurface: surface(),
@@ -217,6 +249,8 @@ export function applyMaterialToLayer(layer: LayerState, materialId: string): Lay
 		materialId: material.id,
 		thicknessMm: material.defaultThicknessMm,
 		conductivityWmK: material.conductivityWmK,
+		densityKgM3: material.densityKgM3,
+		specificHeatJkgK: material.specificHeatJkgK,
 		bareEmissivity: material.bareEmissivity,
 	};
 }
@@ -321,6 +355,8 @@ export function createInitialState(templateId = DEFAULT_TEMPLATE_ID): NetworkSta
 	const template = getTemplate(templateId) ?? TWO_LAYER_TEMPLATE;
 	const base: NetworkState = {
 		templateId: template.id,
+		modelMode: 'steady',
+		...TRANSIENT_DEFAULTS,
 		sourceTemperatureC: template.sourceTemperatureC,
 		sourceBareEmissivity: template.sourceBareEmissivity,
 		sourceSurface: { ...template.sourceSurface },
@@ -356,6 +392,8 @@ export function buildNetworkInputs(state: NetworkState): NetworkInputs {
 			label: layer.label.trim() || 'Material layer',
 			thicknessM: layer.thicknessMm / 1000,
 			conductivityWmK: layer.conductivityWmK,
+			densityKgM3: layer.densityKgM3,
+			specificHeatJkgK: layer.specificHeatJkgK,
 			frontEmissivity: resolveSurfaceEmissivity(
 				layer.frontSurface,
 				layer.bareEmissivity,
@@ -529,23 +567,66 @@ export function validateNetworkState(state: NetworkState): ValidationIssue[] {
 		issues.push({ path: 'airFitSlope', message: 'Air-fit slope cannot be negative.' });
 	}
 
-	if (!finite(state.toleranceK) || state.toleranceK <= 0) {
-		issues.push({ path: 'toleranceK', message: 'Convergence tolerance must be greater than zero.' });
+	if (state.modelMode === 'steady') {
+		if (!finite(state.toleranceK) || state.toleranceK <= 0) {
+			issues.push({ path: 'toleranceK', message: 'Convergence tolerance must be greater than zero.' });
+		}
+
+		if (!finite(state.maxIterations)) {
+			issues.push({ path: 'maxIterations', message: 'Maximum iterations must be a number.' });
+		} else if (!Number.isInteger(state.maxIterations) || state.maxIterations < 1) {
+			issues.push({
+				path: 'maxIterations',
+				message: 'Maximum iterations must be a whole number of at least 1.',
+			});
+		} else if (state.maxIterations > 100000) {
+			issues.push({ path: 'maxIterations', message: 'Maximum iterations cannot exceed 100000.' });
+		}
+
+		if (!finite(state.relaxation) || state.relaxation <= 0 || state.relaxation > 1) {
+			issues.push({ path: 'relaxation', message: 'Relaxation factor must be greater than 0 and at most 1.' });
+		}
 	}
 
-	if (!finite(state.maxIterations)) {
-		issues.push({ path: 'maxIterations', message: 'Maximum iterations must be a number.' });
-	} else if (!Number.isInteger(state.maxIterations) || state.maxIterations < 1) {
-		issues.push({
-			path: 'maxIterations',
-			message: 'Maximum iterations must be a whole number of at least 1.',
+	if (state.modelMode === 'transient') {
+		if (!finite(state.timeStepS) || state.timeStepS <= 0) {
+			issues.push({ path: 'timeStepS', message: 'Time step must be greater than zero.' });
+		}
+		if (!finite(state.finalTimeS) || state.finalTimeS <= 0) {
+			issues.push({ path: 'finalTimeS', message: 'Final time must be greater than zero.' });
+		}
+		if (!finite(state.initialTemperatureC) || state.initialTemperatureC <= ABSOLUTE_ZERO_C) {
+			issues.push({
+				path: 'initialTemperatureC',
+				message: 'Initial temperature must be above absolute zero.',
+			});
+		}
+		if (
+			finite(state.timeStepS) &&
+			state.timeStepS > 0 &&
+			finite(state.finalTimeS) &&
+			state.finalTimeS > 0 &&
+			Math.floor(state.finalTimeS / state.timeStepS) + 2 > MAX_TRANSIENT_OUTPUT_STEPS
+		) {
+			issues.push({
+				path: 'finalTimeS',
+				message: `This time range produces more than ${MAX_TRANSIENT_OUTPUT_STEPS} output steps. Increase the time step or shorten the final time.`,
+			});
+		}
+		state.layers.forEach((layer, index) => {
+			if (!finite(layer.densityKgM3) || layer.densityKgM3 <= 0) {
+				issues.push({
+					path: `layers.${index}.densityKgM3`,
+					message: 'Layer density must be greater than zero.',
+				});
+			}
+			if (!finite(layer.specificHeatJkgK) || layer.specificHeatJkgK <= 0) {
+				issues.push({
+					path: `layers.${index}.specificHeatJkgK`,
+					message: 'Layer specific heat must be greater than zero.',
+				});
+			}
 		});
-	} else if (state.maxIterations > 100000) {
-		issues.push({ path: 'maxIterations', message: 'Maximum iterations cannot exceed 100000.' });
-	}
-
-	if (!finite(state.relaxation) || state.relaxation <= 0 || state.relaxation > 1) {
-		issues.push({ path: 'relaxation', message: 'Relaxation factor must be greater than 0 and at most 1.' });
 	}
 
 	return issues;

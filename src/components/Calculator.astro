@@ -3,6 +3,7 @@ import {
 	ADVANCED_DEFAULTS,
 	DEFAULT_TEMPLATE_ID,
 	NETWORK_TEMPLATES,
+	TRANSIENT_DEFAULTS,
 } from '../lib/networkConfig.ts';
 
 const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEFAULT_TEMPLATE_ID);
@@ -39,11 +40,12 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		</div>
 		<h1>1D Thermal Network Calculator</h1>
 		<p class="lede">
-			Build a chain of materials, air gaps, bonds and surface finishes. The calculator solves the
-			steady-state temperature at every interface and the heat flux through the whole stack.
+			Build a chain of materials, air gaps, bonds and surface finishes. Solve the steady-state
+			temperatures, or step the thermal masses forward in time from t = 0.
 		</p>
 		<ul class="feature-tags" aria-label="Calculator features">
 			<li>Node-based stack</li>
+			<li>Steady state + transient</li>
 			<li>Air gaps, bonds &amp; adhesive</li>
 			<li>Reflective surfaces</li>
 			<li>Runs locally</li>
@@ -59,6 +61,98 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 				</div>
 				<span class="panel-badge">Series</span>
 			</div>
+
+			<div class="model-bar">
+				<div class="model-switcher" role="group" aria-label="Calculation model">
+					<button
+						type="button"
+						class="model-option is-active"
+						data-model-mode="steady"
+						aria-pressed="true"
+					>
+						Steady state
+					</button>
+					<button
+						type="button"
+						class="model-option"
+						data-model-mode="transient"
+						aria-pressed="false"
+					>
+						Transient
+					</button>
+				</div>
+				<p class="model-note" id="model-note">
+					Solve the network until every node temperature converges.
+				</p>
+			</div>
+
+			<section class="transient-settings" id="transient-settings" hidden>
+				<div class="transient-heading">
+					<h3>Time stepping</h3>
+					<span id="transient-step-summary">
+						Δt {TRANSIENT_DEFAULTS.timeStepS} s · 0 to {TRANSIENT_DEFAULTS.finalTimeS} s
+					</span>
+				</div>
+				<div class="field-grid">
+					<div class="field">
+						<div class="field-label-row">
+							<label for="timeStepS">Time step</label>
+							<span class="unit">s</span>
+						</div>
+						<input
+							id="timeStepS"
+							data-path="timeStepS"
+							type="number"
+							value={TRANSIENT_DEFAULTS.timeStepS}
+							step="0.1"
+							min="0.000001"
+							inputmode="decimal"
+							aria-describedby="help-timeStepS"
+						/>
+						<p class="field-help" id="help-timeStepS">
+							Output interval. The backward-Euler step remains stable for stiff materials.
+						</p>
+					</div>
+					<div class="field">
+						<div class="field-label-row">
+							<label for="finalTimeS">Final time</label>
+							<span class="unit">s</span>
+						</div>
+						<input
+							id="finalTimeS"
+							data-path="finalTimeS"
+							type="number"
+							value={TRANSIENT_DEFAULTS.finalTimeS}
+							step="1"
+							min="0.000001"
+							inputmode="decimal"
+							aria-describedby="help-finalTimeS"
+						/>
+						<p class="field-help" id="help-finalTimeS">
+							End of the transient run. The last output lands exactly here.
+						</p>
+					</div>
+					<div class="field field-span-full">
+						<div class="field-label-row">
+							<label for="initialTemperatureC">Initial layer temperature</label>
+							<span class="unit">°C</span>
+						</div>
+						<input
+							id="initialTemperatureC"
+							data-path="initialTemperatureC"
+							type="number"
+							value={TRANSIENT_DEFAULTS.initialTemperatureC}
+							step="1"
+							min="-273.14"
+							inputmode="decimal"
+							aria-describedby="help-initialTemperatureC"
+						/>
+						<p class="field-help" id="help-initialTemperatureC">
+							All layer nodes start here at t = 0. Source and ambient remain fixed.
+						</p>
+					</div>
+				</div>
+			</section>
 
 			<div class="template-bar">
 				<div class="field">
@@ -92,7 +186,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			<details class="advanced" id="advanced-settings">
 				<summary>
 					<span class="summary-title">Advanced settings</span>
-					<span class="summary-hint">Foil optics, air fit, solver</span>
+					<span class="summary-hint" id="advanced-hint">Foil optics, air fit, solver</span>
 					<span class="chevron" aria-hidden="true"></span>
 				</summary>
 
@@ -163,7 +257,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 						</div>
 					</fieldset>
 
-					<fieldset class="input-group">
+					<fieldset class="input-group" id="steady-solver-settings">
 						<legend>Solver</legend>
 						<div class="field-grid">
 							<div class="field">
@@ -254,7 +348,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			<div class="panel-heading">
 				<div>
 					<h2>Results</h2>
-					<p class="panel-subtitle">Live steady-state solution</p>
+					<p class="panel-subtitle" id="results-subtitle">Live steady-state solution</p>
 				</div>
 				<span class="live-pill"><span aria-hidden="true"></span>Live</span>
 			</div>
@@ -276,8 +370,8 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 					<div class="method-body">
 						<p>
 							Material layers are conduction resistances in series. Every connection between the
-							source, layers and ambient contributes its own resistance, and the same heat flux
-							passes through the whole stack.
+							source, layers and ambient contributes its own resistance. In steady-state mode the
+							same heat flux passes through the whole stack.
 						</p>
 						<div class="formula-list">
 							<code>q″ = (T<sub>hot</sub> − T<sub>∞</sub>) / Σ R″</code>
@@ -287,18 +381,30 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 							<code>R″<sub>back</sub> = [ 1 / h<sub>conv,back</sub> ∥ 1 / h<sub>rad,back</sub> ]</code>
 							<code>h<sub>rad</sub> = σ ε<sub>eff</sub> (T<sub>a</sub>² + T<sub>b</sub>²)(T<sub>a</sub> + T<sub>b</sub>)</code>
 						</div>
+						<p>
+							In transient mode each layer receives a thermal capacitance per unit area,
+							<code>C″ = ρ c<sub>p</sub> L</code>, split equally between its front and back nodes.
+							The solver advances all node temperatures from the specified initial temperature using
+							backward Euler at the selected time step.
+						</p>
+						<div class="formula-list">
+							<code>C″ = ρ c<sub>p</sub> L ; C″<sub>front</sub> = C″<sub>back</sub> = C″ / 2</code>
+							<code>C″<sub>i</sub> (T<sub>i</sub><sup>n+1</sup> − T<sub>i</sub><sup>n</sup>) / Δt = Σ G<sub>ij</sub>(T<sub>j</sub><sup>n+1</sup> − T<sub>i</sub><sup>n+1</sup>)</code>
+						</div>
 						<ul class="assumption-list">
-							<li>Steady-state, one-dimensional heat transfer with uniform heat flux.</li>
 							<li>Bonded connections have zero thermal resistance.</li>
 							<li>Contact-resistance connections use the specified R″ directly.</li>
 							<li>Air gaps combine stagnant-air conduction with linearised parallel-plate radiation.</li>
 							<li>Bare surfaces use the material emissivity, reflective foil uses the global foil ε, and custom surfaces use the entered ε.</li>
 							<li>The air conductivity fit is a linear approximation intended for roughly 300–900 K.</li>
-							<li>Node temperatures are solved by damped fixed-point iteration using the settings above.</li>
+							<li>Steady-state node temperatures use damped fixed-point iteration.</li>
+							<li>Transient mode uses implicit backward Euler with temperature-dependent resistances lagged at each step; it is stable at the selected time step.</li>
+							<li>Transient ΔT values are instantaneous surface differences at the final time, not steady-state drops.</li>
 						</ul>
 						<p class="model-reference">
-							Reference implementation: <code>source_model/model.py</code>. The source-model template
-							reproduces its single-layer benchmark.
+							Reference implementations: <code>source_model/model.py</code> and
+							<code>source_model/transient_model.py</code>. The source-model template reproduces the
+							single-layer steady-state benchmark.
 						</p>
 					</div>
 				</details>
@@ -309,7 +415,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 	</div>
 
 	<footer class="app-footer">
-		<p>Based on the Python source model. The solver is fully client-side.</p>
+		<p>Based on the Python steady-state and transient models. The solvers are fully client-side.</p>
 		<p>Static-host ready · No server required</p>
 	</footer>
 </section>
@@ -319,9 +425,12 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		MAX_LAYERS,
 		effectiveGapEmissivity,
 		solveThermalNetwork,
+		solveTransientNetwork,
 		type InterfaceType,
 		type NetworkInputs,
+		type NetworkSnapshot,
 		type ThermalNetworkResult,
+		type TransientNetworkResult,
 		type ValidationIssue,
 	} from '../lib/thermalModel.ts';
 	import {
@@ -340,6 +449,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		resolveSurfaceEmissivity,
 		validateNetworkState,
 		type LayerState,
+		type ModelMode,
 		type NetworkState,
 		type SurfaceState,
 	} from '../lib/networkConfig.ts';
@@ -353,9 +463,14 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		'maxIterations',
 		'relaxation',
 	]);
+	const SIMULATION_PATHS = new Set(['timeStepS', 'finalTimeS', 'initialTemperatureC']);
+
+	type LastRun =
+		| { mode: 'steady'; result: ThermalNetworkResult; inputs: NetworkInputs }
+		| { mode: 'transient'; result: TransientNetworkResult; inputs: NetworkInputs };
 
 	let state = createInitialState(DEFAULT_TEMPLATE_ID);
-	let lastResult: { result: ThermalNetworkResult; inputs: NetworkInputs } | null = null;
+	let lastRun: LastRun | null = null;
 	let scheduledFrame = 0;
 	let copyTimer = 0;
 
@@ -378,6 +493,9 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 	const lengthFormat = new Intl.NumberFormat('en-US', {
 		maximumFractionDigits: 3,
 	});
+	const timeFormat = new Intl.NumberFormat('en-US', {
+		maximumFractionDigits: 3,
+	});
 	const significant = new Intl.NumberFormat('en-US', {
 		maximumSignificantDigits: 4,
 	});
@@ -394,6 +512,15 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 	const templateDescription = byId<HTMLElement>('template-description');
 	const advanced = byId<HTMLDetailsElement>('advanced-settings');
 	const liveSummary = byId<HTMLElement>('live-summary');
+	const modelNote = byId<HTMLElement>('model-note');
+	const transientSettings = byId<HTMLElement>('transient-settings');
+	const transientStepSummary = byId<HTMLElement>('transient-step-summary');
+	const resultsSubtitle = byId<HTMLElement>('results-subtitle');
+	const advancedHint = byId<HTMLElement>('advanced-hint');
+	const steadySolverSettings = byId<HTMLElement>('steady-solver-settings');
+	const modelButtons = Array.from(
+		document.querySelectorAll<HTMLButtonElement>('[data-model-mode]'),
+	);
 
 	function byId<T extends HTMLElement | SVGElement>(id: string): T {
 		const element = document.getElementById(id);
@@ -464,6 +591,10 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 
 	function formatLength(valueMm: number): string {
 		return Number.isFinite(valueMm) ? lengthFormat.format(valueMm) : '—';
+	}
+
+	function formatTime(valueS: number): string {
+		return Number.isFinite(valueS) ? timeFormat.format(valueS) : '—';
 	}
 
 	function formatResidual(value: number): string {
@@ -849,7 +980,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 				<select id="layer-${index}-material" data-path="layers.${index}.materialId" data-rerender="chain">
 					${materialOptions}
 				</select>
-				<p class="field-help">Selecting a preset updates the label, thickness, conductivity and bare emissivity.</p>
+				<p class="field-help">Selecting a preset updates the label, thickness, conductivity, density, specific heat and bare emissivity.</p>
 			</div>
 
 			<div class="field-grid">
@@ -888,6 +1019,52 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 					<p class="field-help" id="help-layer-${index}-conductivity">Through-thickness conductivity.</p>
 				</div>
 			</div>
+
+			${
+				state.modelMode === 'transient'
+					? `<div class="field-grid">
+						<div class="field">
+							<div class="field-label-row">
+								<label for="layer-${index}-density">Density</label>
+								<span class="unit">kg/m³</span>
+							</div>
+							<input
+								id="layer-${index}-density"
+								data-path="layers.${index}.densityKgM3"
+								type="number"
+								value="${numberInputValue(layer.densityKgM3)}"
+								step="1"
+								min="0.000001"
+								inputmode="decimal"
+								aria-describedby="help-layer-${index}-density"
+							/>
+							<p class="field-help" id="help-layer-${index}-density">Used for transient thermal mass.</p>
+						</div>
+						<div class="field">
+							<div class="field-label-row">
+								<label for="layer-${index}-specific-heat">Specific heat</label>
+								<span class="unit">J/(kg·K)</span>
+							</div>
+							<input
+								id="layer-${index}-specific-heat"
+								data-path="layers.${index}.specificHeatJkgK"
+								type="number"
+								value="${numberInputValue(layer.specificHeatJkgK)}"
+								step="1"
+								min="0.000001"
+								inputmode="decimal"
+								aria-describedby="help-layer-${index}-specific-heat"
+							/>
+							<p class="field-help" id="help-layer-${index}-specific-heat">Used for transient thermal mass.</p>
+						</div>
+					</div>
+					<p class="thermal-mass-note">
+						Thermal mass C″ = ρ c<sub>p</sub> L =
+						<strong>${formatProperty(layer.densityKgM3 * layer.specificHeatJkgK * layer.thicknessMm / 1000)}</strong>
+						J/(m²·K)
+					</p>`
+					: ''
+			}
 
 			<div class="surface-grid">
 				${surfaceControlHtml({
@@ -1040,6 +1217,27 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			: 'Custom network — edit any node, connection or surface finish.';
 	}
 
+	function updateModelControls(): void {
+		const transient = state.modelMode === 'transient';
+		modelButtons.forEach((button) => {
+			const active = button.dataset.modelMode === state.modelMode;
+			button.classList.toggle('is-active', active);
+			button.setAttribute('aria-pressed', String(active));
+		});
+		transientSettings.hidden = !transient;
+		steadySolverSettings.hidden = transient;
+		advancedHint.textContent = transient
+			? 'Foil optics, air fit'
+			: 'Foil optics, air fit, solver';
+		resultsSubtitle.textContent = transient
+			? 'Live transient time history'
+			: 'Live steady-state solution';
+		modelNote.textContent = transient
+			? `Advance the thermal masses from t = 0 to ${formatTime(state.finalTimeS)} s in ${formatTime(state.timeStepS)} s steps. Source and ambient boundaries stay fixed.`
+			: 'Solve the network until every node temperature converges.';
+		transientStepSummary.textContent = `Δt ${formatTime(state.timeStepS)} s · 0 to ${formatTime(state.finalTimeS)} s`;
+	}
+
 	function markCustomNetwork(): void {
 		if (state.templateId === 'custom') {
 			return;
@@ -1147,7 +1345,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		type?: InterfaceType;
 	}
 
-	function chainElements(result: ThermalNetworkResult): ChartElement[] {
+	function chainElements(result: NetworkSnapshot): ChartElement[] {
 		const elements: ChartElement[] = [];
 		result.layers.forEach((layer, index) => {
 			const networkInterface = result.interfaces[index];
@@ -1184,7 +1382,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		return `is-${element.type}`;
 	}
 
-	function renderChart(result: ThermalNetworkResult): void {
+	function renderChart(result: NetworkSnapshot): void {
 		const nodes = result.temperatureNodes;
 		const temperatures = nodes.map((node) => node.temperatureC);
 		const left = 58;
@@ -1386,17 +1584,21 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		</div>`;
 	}
 
-	function nodeTemperaturesHtml(result: ThermalNetworkResult): string {
+	function nodeTemperaturesHtml(snapshot: NetworkSnapshot, initialTemperatureC?: number): string {
 		const cards: string[] = [];
+		const hasInitial = initialTemperatureC !== undefined;
 		cards.push(`<div class="temp-node is-source">
 			<div class="temp-node-top">
 				<span class="temp-node-name">Node 1 · Heat source</span>
 				<span class="temp-node-kind">Boundary</span>
 			</div>
-			<div class="temp-node-single"><strong>${formatTemperature(result.sourceTemperatureC)}</strong><span>°C</span></div>
+			<div class="temp-node-single"><strong>${formatTemperature(snapshot.sourceTemperatureC)}</strong><span>°C</span></div>
 		</div>`);
 
-		result.layers.forEach((layer, index) => {
+		snapshot.layers.forEach((layer, index) => {
+			const initialNote = hasInitial
+				? `<p class="temp-node-extra">Initial ${formatTemperature(initialTemperatureC ?? 0)} °C · final mean ${formatTemperature(layer.meanTemperatureC)} °C</p>`
+				: '';
 			cards.push(`<div class="temp-node is-layer">
 				<div class="temp-node-top">
 					<span class="temp-node-name">Node ${index + 2} · ${escapeHtml(layer.label)}</span>
@@ -1407,27 +1609,28 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 					<span class="temp-node-arrow" aria-hidden="true">→</span>
 					<span><small>Back</small><strong>${formatTemperature(layer.backTemperatureC)}</strong><em>°C</em></span>
 				</div>
+				${initialNote}
 			</div>`);
 		});
 
 		cards.push(`<div class="temp-node is-ambient">
 			<div class="temp-node-top">
-				<span class="temp-node-name">Node ${result.layers.length + 2} · Ambient</span>
+				<span class="temp-node-name">Node ${snapshot.layers.length + 2} · Ambient</span>
 				<span class="temp-node-kind">Boundary</span>
 			</div>
-			<div class="temp-node-single"><strong>${formatTemperature(result.ambientTemperatureC)}</strong><span>°C</span></div>
+			<div class="temp-node-single"><strong>${formatTemperature(snapshot.ambientTemperatureC)}</strong><span>°C</span></div>
 		</div>`);
 
 		return `<section class="node-temperatures" aria-labelledby="node-temperatures-title">
 			<div class="section-heading">
-				<h3 id="node-temperatures-title">Node temperatures</h3>
+				<h3 id="node-temperatures-title">${hasInitial ? 'Final node temperatures' : 'Node temperatures'}</h3>
 				<span>°C</span>
 			</div>
 			<div class="temp-chain">${cards.join('')}</div>
 		</section>`;
 	}
 
-	function chartCardHtml(result: ThermalNetworkResult): string {
+	function chartCardHtml(result: NetworkSnapshot): string {
 		const elements = chainElements(result);
 		const total = result.totalResistance;
 		const barSegments = elements
@@ -1485,10 +1688,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		</tr>`;
 	}
 
-	function interfaceRowHtml(
-		result: ThermalNetworkResult,
-		index: number,
-	): string {
+	function interfaceRowHtml(result: NetworkSnapshot, index: number): string {
 		const networkInterface = result.interfaces[index];
 		const total = result.totalResistance;
 		const share = total > 0 ? networkInterface.resistance / total : 0;
@@ -1520,7 +1720,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		</tr>${subRows}`;
 	}
 
-	function layerRowHtml(result: ThermalNetworkResult, index: number): string {
+	function layerRowHtml(result: NetworkSnapshot, index: number): string {
 		const layer = result.layers[index];
 		const total = result.totalResistance;
 		const share = total > 0 ? layer.resistance / total : 0;
@@ -1536,7 +1736,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		</tr>`;
 	}
 
-	function backRowHtml(result: ThermalNetworkResult): string {
+	function backRowHtml(result: NetworkSnapshot): string {
 		const total = result.totalResistance;
 		const share = total > 0 ? result.back.resistance / total : 0;
 		const note = `h<sub>conv</sub> ${formatProperty(1 / result.back.convectionResistance)} W/(m²·K) · ε ${formatEmissivity(result.back.effectiveEmissivity)}`;
@@ -1553,16 +1753,23 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		${subRowHtml('Radiation', result.back.radiationResistance)}`;
 	}
 
-	function breakdownHtml(result: ThermalNetworkResult): string {
+	function breakdownHtml(
+		snapshot: NetworkSnapshot,
+		options: { title?: string; transient?: boolean } = {},
+	): string {
 		const rows: string[] = [];
-		result.layers.forEach((_layer, index) => {
-			rows.push(interfaceRowHtml(result, index));
-			rows.push(layerRowHtml(result, index));
+		snapshot.layers.forEach((_layer, index) => {
+			rows.push(interfaceRowHtml(snapshot, index));
+			rows.push(layerRowHtml(snapshot, index));
 		});
-		rows.push(backRowHtml(result));
+		rows.push(backRowHtml(snapshot));
+		const totalDrop = snapshot.sourceTemperatureC - snapshot.ambientTemperatureC;
+		const transientNote = options.transient
+			? ' ΔT values are instantaneous surface differences at the final time; heat flux is not uniform during the transient.'
+			: '';
 		return `<section class="breakdown" aria-labelledby="breakdown-title">
 			<div class="section-heading">
-				<h3 id="breakdown-title">Resistance breakdown</h3>
+				<h3 id="breakdown-title">${options.title ?? 'Resistance breakdown'}</h3>
 				<span>R″ in m²·K/W</span>
 			</div>
 			<div class="table-wrap">
@@ -1580,14 +1787,14 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 						${rows.join('')}
 						<tr class="total-row">
 							<th scope="row">Total</th>
-							<td>${formatResistance(result.totalResistance)}</td>
+							<td>${formatResistance(snapshot.totalResistance)}</td>
 							<td>100.0%</td>
-							<td>${formatDelta(result.heatFluxWm2 * result.totalResistance)}</td>
+							<td>${formatDelta(totalDrop)}</td>
 						</tr>
 					</tbody>
 				</table>
 			</div>
-			<p class="table-note">Parallel components are shown for reference; their equivalent resistance is the value used in the series network.</p>
+			<p class="table-note">Parallel components are shown for reference; their equivalent resistance is the value used in the series network.${transientNote}</p>
 		</section>`;
 	}
 
@@ -1607,10 +1814,283 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		liveSummary.textContent = `Heat flux ${formatFlux(result.heatFluxWm2)} watts per square metre. ${layerSummary}. ${result.converged ? `Converged in ${result.iterations} iterations.` : 'The solver did not converge.'}`;
 	}
 
+	function seriesClass(index: number): string {
+		return `series-${index % 8}`;
+	}
+
+	function transientHeroHtml(result: TransientNetworkResult): string {
+		const finalStep = result.steps[result.steps.length - 1];
+		const sourceFlux =
+			finalStep.sourceHeatFluxWm2 !== null
+				? ` · source-side ${formatFlux(finalStep.sourceHeatFluxWm2)} W/m²`
+				: '';
+		return `<div class="result-hero">
+			<div class="hero-heading">
+				<p class="result-label">Ambient-side heat flux</p>
+				<span class="hero-unit">at t = ${formatTime(result.settings.finalTimeS)} s</span>
+			</div>
+			<p class="hero-value">
+				<span>${formatFlux(finalStep.ambientHeatFluxWm2)}</span>
+				<span class="hero-metric">W/m²</span>
+			</p>
+			<p class="hero-secondary">${fixedThree.format(finalStep.ambientHeatFluxWm2 / 1000)} kW/m²${sourceFlux}</p>
+			<div class="hero-meta">
+				<span>Δt <strong>${formatTime(result.settings.timeStepS)} s</strong></span>
+				<span>Steps <strong>${result.steps.length - 1}</strong></span>
+				<span>Final R″ <strong>${formatResistance(result.final.totalResistance)}</strong> m²·K/W</span>
+			</div>
+		</div>`;
+	}
+
+	function transientStatusHtml(result: TransientNetworkResult): string {
+		const warning = result.final.airFitOutOfRange
+			? '<span class="status-note is-warning">One or more gap mean temperatures are outside the 300–900 K air-fit range.</span>'
+			: '';
+		return `<div class="status-row">
+			<span class="status-badge is-success">Completed ${result.steps.length - 1} steps · t = ${formatTime(result.settings.finalTimeS)} s · backward Euler</span>
+			<span class="status-note">Heat flux varies along the stack while the layers store energy.</span>
+			${warning}
+		</div>`;
+	}
+
+	function transientChartCardHtml(result: TransientNetworkResult): string {
+		const legend = result.final.layers
+			.map(
+				(layer, index) =>
+					`<span><i class="series-dot ${seriesClass(index)}"></i>${escapeHtml(layer.label)} <strong>${formatTemperature(layer.meanTemperatureC)} °C</strong></span>`,
+			)
+			.join('');
+		return `<figure class="chart-card">
+			<figcaption class="chart-heading">
+				<div>
+					<h3>Temperature history</h3>
+					<p>Layer mean temperatures from t = 0 to ${formatTime(result.settings.finalTimeS)} s</p>
+				</div>
+				<span class="chart-unit">°C</span>
+			</figcaption>
+			<svg
+				id="transient-chart"
+				viewBox="0 0 680 340"
+				role="img"
+				aria-labelledby="transient-chart-title transient-chart-desc"
+			>
+				<title id="transient-chart-title">Layer temperature history</title>
+				<desc id="transient-chart-desc">Temperature history.</desc>
+				<g id="transient-y-grid"></g>
+				<g id="transient-x-grid"></g>
+				<g id="transient-lines"></g>
+				<g id="transient-points"></g>
+				<g id="transient-y-axis"></g>
+				<g id="transient-x-axis"></g>
+			</svg>
+			<div class="chart-legend">${legend}</div>
+			<p class="chart-note">
+				Source held at ${formatTemperature(result.final.sourceTemperatureC)} °C; ambient at
+				${formatTemperature(result.final.ambientTemperatureC)} °C. Each point is an output step.
+			</p>
+		</figure>`;
+	}
+
+	function transientHistoryHtml(result: TransientNetworkResult): string {
+		const headers = result.final.layers
+			.map(
+				(layer, index) =>
+					`<th scope="col">Node ${index + 2} · ${escapeHtml(layer.label)}</th>`,
+			)
+			.join('');
+		const rows = result.steps
+			.map(
+				(step) => `<tr>
+					<th scope="row">${formatTime(step.timeS)}</th>
+					${step.layerMeanTemperaturesC.map((temperature) => `<td>${formatTemperature(temperature)}</td>`).join('')}
+					<td>${formatFlux(step.ambientHeatFluxWm2)}</td>
+				</tr>`,
+			)
+			.join('');
+		return `<details class="time-history">
+			<summary>Time history <span>${result.steps.length} samples</span></summary>
+			<div class="table-wrap">
+				<table>
+					<caption class="sr-only">Layer mean temperatures and ambient heat flux at each output time.</caption>
+					<thead>
+						<tr>
+							<th scope="col">Time (s)</th>
+							${headers}
+							<th scope="col">q″ out (W/m²)</th>
+						</tr>
+					</thead>
+					<tbody>${rows}</tbody>
+				</table>
+			</div>
+		</details>`;
+	}
+
+	function renderTransientChart(result: TransientNetworkResult): void {
+		const left = 58;
+		const right = 26;
+		const top = 24;
+		const plotWidth = 680 - left - right;
+		const plotHeight = 340 - top - 76;
+		const plotRight = left + plotWidth;
+		const plotBottom = top + plotHeight;
+		const finalTime = Math.max(result.settings.finalTimeS, 1e-9);
+		const allTemperatures = result.steps.flatMap((step) => step.layerMeanTemperaturesC);
+		const minimum = Math.min(...allTemperatures);
+		const maximum = Math.max(...allTemperatures);
+		const temperatureRange = Math.max(maximum - minimum, 1);
+		const temperatureStep = niceStep(temperatureRange / 4);
+		const axisMin = Math.floor((minimum - temperatureRange * 0.05) / temperatureStep) * temperatureStep;
+		const axisMax = Math.ceil((maximum + temperatureRange * 0.05) / temperatureStep) * temperatureStep;
+		const scaleY = (value: number): number =>
+			plotBottom - ((value - axisMin) / (axisMax - axisMin)) * plotHeight;
+		const scaleX = (value: number): number => left + (value / finalTime) * plotWidth;
+		const temperatureFormatter = new Intl.NumberFormat('en-US', {
+			maximumFractionDigits: temperatureStep < 1 ? 1 : 0,
+		});
+
+		const yGrid = byId<SVGGElement>('transient-y-grid');
+		const xGrid = byId<SVGGElement>('transient-x-grid');
+		const yAxis = byId<SVGGElement>('transient-y-axis');
+		const xAxis = byId<SVGGElement>('transient-x-axis');
+		yGrid.replaceChildren();
+		xGrid.replaceChildren();
+		yAxis.replaceChildren();
+		xAxis.replaceChildren();
+
+		const yTickCount = Math.min(
+			Math.round((axisMax - axisMin) / temperatureStep),
+			20,
+		);
+		for (let index = 0; index <= yTickCount; index += 1) {
+			const value = axisMin + index * temperatureStep;
+			const y = scaleY(value);
+			if (y < top - 1 || y > plotBottom + 1) {
+				continue;
+			}
+			yGrid.append(
+				svgElement('line', {
+					x1: left,
+					y1: y,
+					x2: plotRight,
+					y2: y,
+					class: 'chart-grid-line',
+				}),
+			);
+			const label = svgElement('text', {
+				x: left - 10,
+				y: y + 4,
+				class: 'chart-tick-label',
+				'text-anchor': 'end',
+			});
+			label.textContent = temperatureFormatter.format(value);
+			yAxis.append(label);
+		}
+
+		const timeStep = niceStep(finalTime / 6);
+		const timeTicks: number[] = [0];
+		for (let value = timeStep; value < finalTime - 1e-9; value += timeStep) {
+			timeTicks.push(value);
+		}
+		timeTicks.push(finalTime);
+		for (const value of timeTicks) {
+			const x = scaleX(value);
+			xGrid.append(
+				svgElement('line', {
+					x1: x,
+					y1: top,
+					x2: x,
+					y2: plotBottom,
+					class: 'chart-grid-line',
+				}),
+			);
+			const label = svgElement('text', {
+				x,
+				y: plotBottom + 18,
+				class: 'chart-x-label',
+				'text-anchor': 'middle',
+			});
+			label.textContent = formatTime(value);
+			xAxis.append(label);
+		}
+
+		const axisTitle = svgElement('text', {
+			x: left + plotWidth / 2,
+			y: plotBottom + 42,
+			class: 'chart-axis-title',
+			'text-anchor': 'middle',
+		});
+		axisTitle.textContent = 'Time (s)';
+		xAxis.append(axisTitle);
+
+		const lines = byId<SVGGElement>('transient-lines');
+		const points = byId<SVGGElement>('transient-points');
+		lines.replaceChildren();
+		points.replaceChildren();
+		const showPoints = result.steps.length <= 31;
+		result.final.layers.forEach((_layer, layerIndex) => {
+			const line = svgElement('polyline', {
+				points: result.steps
+					.map(
+						(step) =>
+							`${scaleX(step.timeS)},${scaleY(step.layerMeanTemperaturesC[layerIndex])}`,
+					)
+					.join(' '),
+				class: `chart-series-line ${seriesClass(layerIndex)}`,
+			});
+			lines.append(line);
+			if (showPoints) {
+				for (const step of result.steps) {
+					points.append(
+						svgElement('circle', {
+							cx: scaleX(step.timeS),
+							cy: scaleY(step.layerMeanTemperaturesC[layerIndex]),
+							r: 2.6,
+							class: `chart-series-dot ${seriesClass(layerIndex)}`,
+						}),
+					);
+				}
+			}
+		});
+
+		const finalStep = result.steps[result.steps.length - 1];
+		const finalSummary = result.final.layers
+			.map(
+				(layer, index) =>
+					`${layer.label} final mean ${formatTemperature(finalStep.layerMeanTemperaturesC[index])} degrees Celsius`,
+			)
+			.join(', ');
+		const chartDescription = document.getElementById('transient-chart-desc');
+		if (chartDescription) {
+			chartDescription.textContent = `Temperature history from 0 to ${formatTime(finalTime)} seconds. ${finalSummary}.`;
+		}
+	}
+
+	function renderTransientResults(result: TransientNetworkResult): void {
+		resultsDynamic.innerHTML = `${transientHeroHtml(result)}
+			${transientStatusHtml(result)}
+			${nodeTemperaturesHtml(result.final, result.settings.initialTemperatureC)}
+			${transientChartCardHtml(result)}
+			${transientHistoryHtml(result)}
+			${breakdownHtml(result.final, {
+				title: `Resistance breakdown at t = ${formatTime(result.settings.finalTimeS)} s`,
+				transient: true,
+			})}`;
+		renderTransientChart(result);
+		const finalStep = result.steps[result.steps.length - 1];
+		const layerSummary = result.final.layers
+			.map(
+				(layer, index) =>
+					`Node ${index + 2} ${layer.label} final mean ${formatTemperature(finalStep.layerMeanTemperaturesC[index])} degrees Celsius`,
+			)
+			.join('. ');
+		liveSummary.textContent = `Transient run to ${formatTime(result.settings.finalTimeS)} seconds. ${layerSummary}. Ambient heat flux ${formatFlux(finalStep.ambientHeatFluxWm2)} watts per square metre.`;
+	}
+
 	function refresh(options: { rerenderChain?: boolean; focus?: () => void } = {}): void {
 		if (options.rerenderChain) {
 			renderChain();
 		}
+		updateModelControls();
 		updateComputedHints();
 		const issues = validateNetworkState(state);
 		if (issues.length > 0) {
@@ -1623,12 +2103,23 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		clearErrors();
 		try {
 			const inputs = buildNetworkInputs(state);
-			const result = solveThermalNetwork(inputs);
-			lastResult = { result, inputs };
-			markResultsValid();
-			renderResults(result);
+			if (state.modelMode === 'transient') {
+				const result = solveTransientNetwork(inputs, {
+					timeStepS: state.timeStepS,
+					finalTimeS: state.finalTimeS,
+					initialTemperatureC: state.initialTemperatureC,
+				});
+				lastRun = { mode: 'transient', result, inputs };
+				markResultsValid();
+				renderTransientResults(result);
+			} else {
+				const result = solveThermalNetwork(inputs);
+				lastRun = { mode: 'steady', result, inputs };
+				markResultsValid();
+				renderResults(result);
+			}
 		} catch (error) {
-			lastResult = null;
+			lastRun = null;
 			clearErrors();
 			errorBanner.hidden = false;
 			errorBanner.textContent =
@@ -1639,6 +2130,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 	}
 
 	function scheduleRefresh(): void {
+		copyButton.disabled = true;
 		if (scheduledFrame) {
 			cancelAnimationFrame(scheduledFrame);
 		}
@@ -1666,7 +2158,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			return;
 		}
 		setValueAtPath(state, path, readFieldValue(target));
-		if (!ADVANCED_PATHS.has(path)) {
+		if (!ADVANCED_PATHS.has(path) && !SIMULATION_PATHS.has(path)) {
 			markCustomNetwork();
 		}
 		scheduleRefresh();
@@ -1796,34 +2288,93 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		}
 	}
 
-	function buildSummary(result: ThermalNetworkResult): string {
+	function syncTransientInputs(): void {
+		const values: Record<string, number> = {
+			timeStepS: state.timeStepS,
+			finalTimeS: state.finalTimeS,
+			initialTemperatureC: state.initialTemperatureC,
+		};
+		for (const [id, value] of Object.entries(values)) {
+			const input = document.getElementById(id) as HTMLInputElement | null;
+			if (input) {
+				input.value = numberInputValue(value);
+			}
+		}
+	}
+
+	function summaryHeader(mode: 'steady' | 'transient'): string[] {
 		const template = getTemplate(state.templateId);
-		const lines = [
+		return [
 			'1D Thermal Network Model',
 			`Template: ${template ? template.name : 'Custom network'}`,
-			`T_hot: ${formatTemperature(result.sourceTemperatureC)} °C`,
-			`T_inf: ${formatTemperature(result.ambientTemperatureC)} °C`,
+			`Mode: ${mode === 'steady' ? 'Steady state' : 'Transient'}`,
+		];
+	}
+
+	function summaryNetworkLines(snapshot: NetworkSnapshot): string[] {
+		return [
+			`T_hot: ${formatTemperature(snapshot.sourceTemperatureC)} °C`,
+			`T_inf: ${formatTemperature(snapshot.ambientTemperatureC)} °C`,
 			'',
 			'Layers:',
-			...result.layers.map(
+			...snapshot.layers.map(
 				(layer, index) =>
 					`Node ${index + 2} · ${layer.label}: front ${formatTemperature(layer.frontTemperatureC)} °C, back ${formatTemperature(layer.backTemperatureC)} °C, ${formatLength(layer.thicknessM * 1000)} mm, k ${formatProperty(layer.conductivityWmK)} W/(m·K), ε front ${formatEmissivity(layer.frontEmissivity)} / back ${formatEmissivity(layer.backEmissivity)}`,
 			),
 			'',
 			'Connections:',
-			...result.interfaces.map(
+			...snapshot.interfaces.map(
 				(networkInterface, index) =>
 					`Connection ${index + 1} · ${INTERFACE_TYPE_LABELS[networkInterface.type]}: R ${formatResistance(networkInterface.resistance)} m²·K/W, ΔT ${formatDelta(networkInterface.temperatureDropK)}`,
 			),
-			`Back surface: R ${formatResistance(result.back.resistance)} m²·K/W, ΔT ${formatDelta(result.back.temperatureDropK)}`,
+			`Back surface: R ${formatResistance(snapshot.back.resistance)} m²·K/W, ΔT ${formatDelta(snapshot.back.temperatureDropK)}`,
+			`Total resistance: ${formatResistance(snapshot.totalResistance)} m²·K/W`,
+		];
+	}
+
+	function buildSteadySummary(result: ThermalNetworkResult): string {
+		return [
+			...summaryHeader('steady'),
+			...summaryNetworkLines(result),
 			'',
 			`Heat flux: ${formatFlux(result.heatFluxWm2)} W/m²`,
-			`Total resistance: ${formatResistance(result.totalResistance)} m²·K/W`,
 			result.converged
 				? `Solver: converged in ${result.iterations} iterations`
 				: `Solver: stopped after ${result.iterations} iterations without converging`,
-		];
-		return lines.join('\n');
+		].join('\n');
+	}
+
+	function buildTransientSummary(result: TransientNetworkResult): string {
+		const finalStep = result.steps[result.steps.length - 1];
+		const layerMassLines = result.final.layers.map((layer, index) => {
+			const layerState = state.layers[index];
+			const capacity = layerState
+				? layerState.densityKgM3 * layerState.specificHeatJkgK * layer.thicknessM
+				: Number.NaN;
+			return `Node ${index + 2} · ${layer.label}: C″ ${formatProperty(capacity)} J/(m²·K)`;
+		});
+		const historyLines = result.steps.map(
+			(step) =>
+				`  t = ${formatTime(step.timeS)} s: ${step.layerMeanTemperaturesC.map((temperature) => `${formatTemperature(temperature)} °C`).join(' / ')}; q″ out ${formatFlux(step.ambientHeatFluxWm2)} W/m²`,
+		);
+		return [
+			...summaryHeader('transient'),
+			`Initial temperature: ${formatTemperature(result.settings.initialTemperatureC)} °C`,
+			`Time step: ${formatTime(result.settings.timeStepS)} s`,
+			`Final time: ${formatTime(result.settings.finalTimeS)} s`,
+			...summaryNetworkLines(result.final),
+			'',
+			'Thermal mass:',
+			...layerMassLines,
+			'',
+			`Final ambient heat flux: ${formatFlux(finalStep.ambientHeatFluxWm2)} W/m²`,
+			finalStep.sourceHeatFluxWm2 !== null
+				? `Final source-side heat flux: ${formatFlux(finalStep.sourceHeatFluxWm2)} W/m²`
+				: 'Final source-side heat flux: not available for a zero-resistance first connection',
+			'',
+			'Time history:',
+			...historyLines,
+		].join('\n');
 	}
 
 	async function copyText(text: string): Promise<void> {
@@ -1842,11 +2393,15 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 	}
 
 	copyButton.addEventListener('click', async () => {
-		if (!lastResult) {
+		if (!lastRun || lastRun.mode !== state.modelMode) {
 			return;
 		}
 		try {
-			await copyText(buildSummary(lastResult.result));
+			const summary =
+				lastRun.mode === 'steady'
+					? buildSteadySummary(lastRun.result)
+					: buildTransientSummary(lastRun.result);
+			await copyText(summary);
 			showCopyState('Copied');
 		} catch {
 			showCopyState('Copy failed');
@@ -1857,8 +2412,10 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		state = createInitialState(DEFAULT_TEMPLATE_ID);
 		templateSelect.value = state.templateId;
 		syncAdvancedInputs();
+		syncTransientInputs();
 		advanced.open = false;
 		updateTemplateDescription();
+		updateModelControls();
 		refresh({ rerenderChain: true, focus: () => resetButton.focus() });
 	});
 
@@ -1878,6 +2435,20 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		refresh({ rerenderChain: true });
 	});
 
+	modelButtons.forEach((button) => {
+		button.addEventListener('click', () => {
+			const mode = button.dataset.modelMode;
+			if (mode !== 'steady' && mode !== 'transient') {
+				return;
+			}
+			if (state.modelMode === mode) {
+				return;
+			}
+			state.modelMode = mode as ModelMode;
+			refresh({ rerenderChain: true });
+		});
+	});
+
 	form.addEventListener('input', handleFieldInput);
 	form.addEventListener('change', handleFieldChange);
 	form.addEventListener('submit', (event) => {
@@ -1888,7 +2459,9 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 
 	templateSelect.value = state.templateId;
 	syncAdvancedInputs();
+	syncTransientInputs();
 	updateTemplateDescription();
+	updateModelControls();
 	renderChain();
 	refresh();
 </script>
@@ -2016,6 +2589,87 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		font-weight: 700;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
+	}
+
+	.thermal-app .model-bar {
+		margin-bottom: 16px;
+		padding: 12px;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: var(--panel-soft);
+	}
+
+	.thermal-app .model-switcher {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 4px;
+		padding: 4px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--panel);
+	}
+
+	.thermal-app .model-option {
+		min-height: 34px;
+		padding: 7px 10px;
+		border: 0;
+		border-radius: 7px;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.78rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	.thermal-app .model-option:hover {
+		color: var(--text);
+	}
+
+	.thermal-app .model-option.is-active {
+		background: var(--accent-soft);
+		color: var(--accent);
+		box-shadow: inset 0 0 0 1px var(--accent-ring);
+	}
+
+	.thermal-app .model-option:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.thermal-app .model-note {
+		margin: 9px 0 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.5;
+	}
+
+	.thermal-app .transient-settings {
+		margin-bottom: 16px;
+		padding: 12px;
+		border: 1px solid var(--accent-ring);
+		border-radius: 12px;
+		background: var(--accent-soft);
+	}
+
+	.thermal-app .transient-heading {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 10px;
+	}
+
+	.thermal-app .transient-heading h3 {
+		margin: 0;
+		font-size: 0.83rem;
+		letter-spacing: -0.01em;
+	}
+
+	.thermal-app .transient-heading span {
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.thermal-app .template-bar {
@@ -2152,6 +2806,18 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		font-size: 0.71rem;
 		font-weight: 600;
 		line-height: 1.45;
+	}
+
+	.thermal-app .thermal-mass-note {
+		margin: 8px 0 0;
+		color: var(--muted);
+		font-size: 0.7rem;
+		line-height: 1.45;
+	}
+
+	.thermal-app .thermal-mass-note strong {
+		color: var(--text);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.thermal-app .custom-emissivity-row {
@@ -2724,6 +3390,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		color: var(--accent);
 		font-size: 0.85rem;
 		letter-spacing: 0;
+		text-transform: none;
 	}
 
 	.thermal-app .hero-unit {
@@ -2954,6 +3621,13 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		font-size: 0.8rem;
 	}
 
+	.thermal-app .temp-node-extra {
+		margin: 5px 0 0;
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-variant-numeric: tabular-nums;
+	}
+
 	.thermal-app .chart-card {
 		margin: 18px 0 0;
 		padding: 16px;
@@ -3035,7 +3709,8 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		font-size: 0.64rem;
 	}
 
-	.thermal-app #temp-chart {
+	.thermal-app #temp-chart,
+	.thermal-app #transient-chart {
 		display: block;
 		width: 100%;
 		height: auto;
@@ -3132,6 +3807,158 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		display: inline-flex;
 		align-items: center;
 		gap: 5px;
+	}
+
+	.thermal-app .chart-legend strong {
+		color: var(--text);
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.thermal-app .chart-axis-title {
+		fill: var(--muted);
+		font-family: var(--font-sans);
+		font-size: 10px;
+		font-weight: 600;
+	}
+
+	.thermal-app .chart-series-line {
+		fill: none;
+		stroke: var(--series-color);
+		stroke-width: 2.4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.thermal-app .chart-series-dot {
+		fill: var(--panel);
+		stroke: var(--series-color);
+		stroke-width: 1.8;
+	}
+
+	.thermal-app .series-dot {
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		flex: none;
+		border-radius: 50%;
+		background: var(--series-color);
+	}
+
+	.thermal-app .series-0 {
+		--series-color: #d9480f;
+	}
+
+	.thermal-app .series-1 {
+		--series-color: #0b7285;
+	}
+
+	.thermal-app .series-2 {
+		--series-color: #1971c2;
+	}
+
+	.thermal-app .series-3 {
+		--series-color: #9c36b5;
+	}
+
+	.thermal-app .series-4 {
+		--series-color: #2b8a3e;
+	}
+
+	.thermal-app .series-5 {
+		--series-color: #b35c00;
+	}
+
+	.thermal-app .series-6 {
+		--series-color: #c2255c;
+	}
+
+	.thermal-app .series-7 {
+		--series-color: #495057;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		.thermal-app .series-0 {
+			--series-color: #ff922b;
+		}
+
+		.thermal-app .series-1 {
+			--series-color: #63e6be;
+		}
+
+		.thermal-app .series-2 {
+			--series-color: #74c0fc;
+		}
+
+		.thermal-app .series-3 {
+			--series-color: #da77f2;
+		}
+
+		.thermal-app .series-4 {
+			--series-color: #69db7c;
+		}
+
+		.thermal-app .series-5 {
+			--series-color: #ffd43b;
+		}
+
+		.thermal-app .series-6 {
+			--series-color: #f783ac;
+		}
+
+		.thermal-app .series-7 {
+			--series-color: #adb5bd;
+		}
+	}
+
+	.thermal-app .time-history {
+		margin-top: 14px;
+		padding: 12px 14px;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: var(--panel-soft);
+	}
+
+	.thermal-app .time-history summary {
+		cursor: pointer;
+		color: var(--text);
+		font-size: 0.8rem;
+		font-weight: 700;
+		list-style: none;
+	}
+
+	.thermal-app .time-history summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.thermal-app .time-history summary::before {
+		content: '+';
+		display: inline-block;
+		width: 15px;
+		color: var(--accent);
+		font-weight: 750;
+	}
+
+	.thermal-app .time-history[open] summary::before {
+		content: '−';
+	}
+
+	.thermal-app .time-history summary span {
+		margin-left: 6px;
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-weight: 500;
+	}
+
+	.thermal-app .time-history summary:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 4px;
+		border-radius: 4px;
+	}
+
+	.thermal-app .time-history .table-wrap {
+		margin-top: 10px;
+		background: var(--panel);
 	}
 
 	.thermal-app .dot {

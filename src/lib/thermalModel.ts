@@ -2,6 +2,9 @@ export const STEFAN_BOLTZMANN = 5.67e-8;
 export const KELVIN_OFFSET = 273.15;
 export const ABSOLUTE_ZERO_C = -273.15;
 export const MAX_LAYERS = 20;
+export const MAX_TRANSIENT_OUTPUT_STEPS = 10000;
+
+const MAX_CONDUCTANCE = 1e9;
 
 export type InterfaceType = 'air-gap' | 'bonded' | 'adhesive' | 'contact';
 export type NodeKind = 'source' | 'layer-front' | 'layer-back' | 'ambient';
@@ -11,6 +14,8 @@ export interface LayerInput {
 	label: string;
 	thicknessM: number;
 	conductivityWmK: number;
+	densityKgM3: number;
+	specificHeatJkgK: number;
 	frontEmissivity: number;
 	backEmissivity: number;
 }
@@ -35,6 +40,12 @@ export interface NetworkInputs {
 	toleranceK: number;
 	maxIterations: number;
 	relaxation: number;
+}
+
+export interface TransientSettings {
+	timeStepS: number;
+	finalTimeS: number;
+	initialTemperatureC: number;
 }
 
 export interface TemperatureNode {
@@ -91,11 +102,7 @@ export interface BackResult {
 	ambientTemperatureC: number;
 }
 
-export interface ThermalNetworkResult {
-	iterations: number;
-	converged: boolean;
-	errorK: number;
-	heatFluxWm2: number;
+export interface NetworkSnapshot {
 	totalResistance: number;
 	sourceTemperatureC: number;
 	ambientTemperatureC: number;
@@ -104,6 +111,27 @@ export interface ThermalNetworkResult {
 	back: BackResult;
 	temperatureNodes: TemperatureNode[];
 	airFitOutOfRange: boolean;
+}
+
+export interface ThermalNetworkResult extends NetworkSnapshot {
+	iterations: number;
+	converged: boolean;
+	errorK: number;
+	heatFluxWm2: number;
+}
+
+export interface TransientStepResult {
+	timeS: number;
+	nodeTemperaturesC: number[];
+	layerMeanTemperaturesC: number[];
+	sourceHeatFluxWm2: number | null;
+	ambientHeatFluxWm2: number;
+}
+
+export interface TransientNetworkResult {
+	settings: TransientSettings;
+	steps: TransientStepResult[];
+	final: NetworkSnapshot;
 }
 
 export interface ValidationIssue {
@@ -300,14 +328,72 @@ export function validateNetworkInputs(inputs: NetworkInputs): ValidationIssue[] 
 	return issues;
 }
 
-interface IterationState {
+export function validateTransientInputs(
+	inputs: NetworkInputs,
+	settings: TransientSettings,
+): ValidationIssue[] {
+	const solverPaths = new Set(['toleranceK', 'maxIterations', 'relaxation']);
+	const issues = validateNetworkInputs(inputs).filter(
+		(entry) => !solverPaths.has(entry.path),
+	);
+
+	if (!isFiniteNumber(settings.timeStepS) || settings.timeStepS <= 0) {
+		issues.push(issue('timeStepS', 'Time step must be greater than zero.'));
+	}
+
+	if (!isFiniteNumber(settings.finalTimeS) || settings.finalTimeS <= 0) {
+		issues.push(issue('finalTimeS', 'Final time must be greater than zero.'));
+	}
+
+	if (!isFiniteNumber(settings.initialTemperatureC) || settings.initialTemperatureC <= ABSOLUTE_ZERO_C) {
+		issues.push(issue('initialTemperatureC', 'Initial temperature must be above absolute zero.'));
+	}
+
+	if (
+		isFiniteNumber(settings.timeStepS) &&
+		settings.timeStepS > 0 &&
+		isFiniteNumber(settings.finalTimeS) &&
+		settings.finalTimeS > 0
+	) {
+		const outputStepCount = Math.floor(settings.finalTimeS / settings.timeStepS) + 2;
+		if (outputStepCount > MAX_TRANSIENT_OUTPUT_STEPS) {
+			issues.push(
+				issue(
+					'finalTimeS',
+					`This time range produces more than ${MAX_TRANSIENT_OUTPUT_STEPS} output steps. Increase the time step or shorten the final time.`,
+				),
+			);
+		}
+	}
+
+	if (Array.isArray(inputs.layers)) {
+		inputs.layers.forEach((layer, index) => {
+			const prefix = `layers.${index}`;
+			if (!isFiniteNumber(layer.densityKgM3) || layer.densityKgM3 <= 0) {
+				issues.push(issue(`${prefix}.densityKgM3`, 'Layer density must be greater than zero.'));
+			}
+			if (!isFiniteNumber(layer.specificHeatJkgK) || layer.specificHeatJkgK <= 0) {
+				issues.push(
+					issue(`${prefix}.specificHeatJkgK`, 'Layer specific heat must be greater than zero.'),
+				);
+			}
+		});
+	}
+
+	return issues;
+}
+
+interface NetworkEvaluation {
 	interfaceResistances: number[];
+	interfaceDetails: Array<
+		Omit<
+			InterfaceResult,
+			'index' | 'temperatureDropK' | 'upstreamTemperatureC' | 'downstreamTemperatureC'
+		>
+	>;
 	layerResistances: number[];
 	backResistance: number;
-	interfaceDetails: InterfaceResult[];
 	backDetails: Omit<BackResult, 'temperatureDropK' | 'surfaceTemperatureC' | 'ambientTemperatureC'>;
-	heatFluxWm2: number;
-	totalResistance: number;
 	gapMeanTemperatures: number[];
 }
 
@@ -320,7 +406,13 @@ function interfaceResistance(
 	index: number,
 	upstreamK: number,
 	downstreamK: number,
-): { resistance: number; detail: Omit<InterfaceResult, 'index' | 'temperatureDropK' | 'upstreamTemperatureC' | 'downstreamTemperatureC'> } {
+): {
+	resistance: number;
+	detail: Omit<
+		InterfaceResult,
+		'index' | 'temperatureDropK' | 'upstreamTemperatureC' | 'downstreamTemperatureC'
+	>;
+} {
 	const networkInterface = inputs.interfaces[index];
 
 	if (networkInterface.type === 'bonded') {
@@ -397,7 +489,10 @@ function interfaceResistance(
 function backResistance(
 	inputs: NetworkInputs,
 	lastSurfaceK: number,
-): { resistance: number; detail: IterationState['backDetails'] } {
+): {
+	resistance: number;
+	detail: Omit<BackResult, 'temperatureDropK' | 'surfaceTemperatureC' | 'ambientTemperatureC'>;
+} {
 	const ambientK = inputs.ambientTemperatureC + KELVIN_OFFSET;
 	const effectiveEmissivity = inputs.layers[inputs.layers.length - 1].backEmissivity;
 	const convectionResistance = 1 / inputs.backConvectionWm2K;
@@ -422,113 +517,77 @@ function backResistance(
 	};
 }
 
-export function solveThermalNetwork(inputs: NetworkInputs): ThermalNetworkResult {
-	const issues = validateNetworkInputs(inputs);
-	if (issues.length > 0) {
-		throw new ThermalNetworkError(issues.map((entry) => entry.message).join(' '));
+function evaluateNetwork(
+	inputs: NetworkInputs,
+	junctionTemperaturesK: number[],
+): NetworkEvaluation {
+	const hotK = inputs.sourceTemperatureC + KELVIN_OFFSET;
+	const layerCount = inputs.layers.length;
+	const interfaceResistances: number[] = [];
+	const interfaceDetails: NetworkEvaluation['interfaceDetails'] = [];
+	const layerResistances: number[] = [];
+	const gapMeanTemperatures: number[] = [];
+
+	for (let index = 0; index < layerCount; index += 1) {
+		const upstreamK = index === 0 ? hotK : junctionTemperaturesK[2 * index - 1];
+		const downstreamK = junctionTemperaturesK[2 * index];
+		const { resistance, detail } = interfaceResistance(
+			inputs,
+			index,
+			upstreamK,
+			downstreamK,
+		);
+		interfaceResistances.push(resistance);
+		interfaceDetails.push(detail);
+		if (detail.gapMeanTemperatureK !== undefined) {
+			gapMeanTemperatures.push(detail.gapMeanTemperatureK);
+		}
+		layerResistances.push(
+			inputs.layers[index].thicknessM / inputs.layers[index].conductivityWmK,
+		);
 	}
 
-	const hotK = inputs.sourceTemperatureC + KELVIN_OFFSET;
-	const ambientK = inputs.ambientTemperatureC + KELVIN_OFFSET;
-	const layerCount = inputs.layers.length;
-	const junctionCount = layerCount * 2;
-	const totalSegmentCount = layerCount * 2 + 1;
-
-	let junctionTemperatures = Array.from(
-		{ length: junctionCount },
-		(_, index) => hotK + ((ambientK - hotK) * (index + 1)) / totalSegmentCount,
+	const { resistance: backResistanceValue, detail: backDetails } = backResistance(
+		inputs,
+		junctionTemperaturesK[junctionTemperaturesK.length - 1],
 	);
 
-	let iteration = 0;
-	let errorK = Number.POSITIVE_INFINITY;
-	let lastState: IterationState | null = null;
+	return {
+		interfaceResistances,
+		interfaceDetails,
+		layerResistances,
+		backResistance: backResistanceValue,
+		backDetails,
+		gapMeanTemperatures,
+	};
+}
 
-	while (errorK > inputs.toleranceK && iteration < inputs.maxIterations) {
-		const previousTemperatures = junctionTemperatures.slice();
-		const interfaceResistances: number[] = [];
-		const layerResistances: number[] = [];
-		const interfaceDetails: InterfaceResult[] = [];
-		const gapMeanTemperatures: number[] = [];
+function buildSnapshot(
+	inputs: NetworkInputs,
+	junctionTemperaturesK: number[],
+): NetworkSnapshot {
+	const evaluation = evaluateNetwork(inputs, junctionTemperaturesK);
 
-		for (let index = 0; index < layerCount; index += 1) {
-			const upstreamK = index === 0 ? hotK : previousTemperatures[2 * index - 1];
-			const downstreamK = previousTemperatures[2 * index];
-			const { resistance, detail } = interfaceResistance(
-				inputs,
+	const interfaceResults: InterfaceResult[] = evaluation.interfaceDetails.map(
+		(networkInterfaceResult, index) => {
+			const upstreamTemperatureC =
+				index === 0
+					? inputs.sourceTemperatureC
+					: junctionTemperaturesK[2 * index - 1] - KELVIN_OFFSET;
+			const downstreamTemperatureC = junctionTemperaturesK[2 * index] - KELVIN_OFFSET;
+			return {
+				...networkInterfaceResult,
 				index,
-				upstreamK,
-				downstreamK,
-			);
-			interfaceResistances.push(resistance);
-			interfaceDetails.push({
-				...detail,
-				index,
-				temperatureDropK: 0,
-				upstreamTemperatureC: upstreamK - KELVIN_OFFSET,
-				downstreamTemperatureC: downstreamK - KELVIN_OFFSET,
-			});
-			if (detail.gapMeanTemperatureK !== undefined) {
-				gapMeanTemperatures.push(detail.gapMeanTemperatureK);
-			}
+				upstreamTemperatureC,
+				downstreamTemperatureC,
+				temperatureDropK: upstreamTemperatureC - downstreamTemperatureC,
+			};
+		},
+	);
 
-			layerResistances.push(
-				inputs.layers[index].thicknessM / inputs.layers[index].conductivityWmK,
-			);
-		}
-
-		const lastSurfaceK = previousTemperatures[junctionCount - 1];
-		const { resistance: backResistanceValue, detail: backDetails } = backResistance(
-			inputs,
-			lastSurfaceK,
-		);
-
-		const totalResistance =
-			interfaceResistances.reduce((sum, value) => sum + value, 0) +
-			layerResistances.reduce((sum, value) => sum + value, 0) +
-			backResistanceValue;
-		const heatFluxWm2 = (hotK - ambientK) / totalResistance;
-
-		let currentK = hotK;
-		const nextTemperatures = new Array<number>(junctionCount);
-		for (let index = 0; index < layerCount; index += 1) {
-			currentK -= heatFluxWm2 * interfaceResistances[index];
-			nextTemperatures[2 * index] = currentK;
-			currentK -= heatFluxWm2 * layerResistances[index];
-			nextTemperatures[2 * index + 1] = currentK;
-		}
-
-		for (let index = 0; index < junctionCount; index += 1) {
-			junctionTemperatures[index] =
-				inputs.relaxation * nextTemperatures[index] +
-				(1 - inputs.relaxation) * previousTemperatures[index];
-		}
-
-		errorK = junctionTemperatures.reduce(
-			(maximum, value, index) => Math.max(maximum, Math.abs(value - previousTemperatures[index])),
-			0,
-		);
-		iteration += 1;
-
-		lastState = {
-			interfaceResistances,
-			layerResistances,
-			backResistance: backResistanceValue,
-			interfaceDetails,
-			backDetails,
-			heatFluxWm2,
-			totalResistance,
-			gapMeanTemperatures,
-		};
-	}
-
-	if (!lastState) {
-		throw new ThermalNetworkError('The solver did not produce a result.');
-	}
-
-	const converged = Number.isFinite(errorK) && errorK <= inputs.toleranceK;
 	const layerResults: LayerResult[] = inputs.layers.map((layer, index) => {
-		const frontTemperatureC = junctionTemperatures[2 * index] - KELVIN_OFFSET;
-		const backTemperatureC = junctionTemperatures[2 * index + 1] - KELVIN_OFFSET;
+		const frontTemperatureC = junctionTemperaturesK[2 * index] - KELVIN_OFFSET;
+		const backTemperatureC = junctionTemperaturesK[2 * index + 1] - KELVIN_OFFSET;
 		return {
 			index,
 			id: layer.id,
@@ -537,32 +596,27 @@ export function solveThermalNetwork(inputs: NetworkInputs): ThermalNetworkResult
 			conductivityWmK: layer.conductivityWmK,
 			frontEmissivity: layer.frontEmissivity,
 			backEmissivity: layer.backEmissivity,
-			resistance: lastState.layerResistances[index],
-			temperatureDropK: lastState.heatFluxWm2 * lastState.layerResistances[index],
+			resistance: evaluation.layerResistances[index],
+			temperatureDropK: frontTemperatureC - backTemperatureC,
 			frontTemperatureC,
 			backTemperatureC,
 			meanTemperatureC: (frontTemperatureC + backTemperatureC) / 2,
 		};
 	});
 
-	const interfaceResults: InterfaceResult[] = lastState.interfaceDetails.map(
-		(networkInterfaceResult, index) => ({
-			...networkInterfaceResult,
-			temperatureDropK: lastState.heatFluxWm2 * networkInterfaceResult.resistance,
-			upstreamTemperatureC:
-				index === 0
-					? inputs.sourceTemperatureC
-					: junctionTemperatures[2 * index - 1] - KELVIN_OFFSET,
-			downstreamTemperatureC: junctionTemperatures[2 * index] - KELVIN_OFFSET,
-		}),
-	);
-
+	const surfaceTemperatureC =
+		junctionTemperaturesK[junctionTemperaturesK.length - 1] - KELVIN_OFFSET;
 	const back: BackResult = {
-		...lastState.backDetails,
-		temperatureDropK: lastState.heatFluxWm2 * lastState.backResistance,
-		surfaceTemperatureC: junctionTemperatures[junctionCount - 1] - KELVIN_OFFSET,
+		...evaluation.backDetails,
+		temperatureDropK: surfaceTemperatureC - inputs.ambientTemperatureC,
+		surfaceTemperatureC,
 		ambientTemperatureC: inputs.ambientTemperatureC,
 	};
+
+	const totalResistance =
+		evaluation.interfaceResistances.reduce((sum, value) => sum + value, 0) +
+		evaluation.layerResistances.reduce((sum, value) => sum + value, 0) +
+		evaluation.backResistance;
 
 	const temperatureNodes: TemperatureNode[] = [
 		{
@@ -595,28 +649,232 @@ export function solveThermalNetwork(inputs: NetworkInputs): ThermalNetworkResult
 
 	temperatureNodes.push({
 		key: 'ambient',
-		label: `Node ${layerCount + 2} · Ambient`,
+		label: `Node ${inputs.layers.length + 2} · Ambient`,
 		shortLabel: 'Ambient',
 		temperatureC: inputs.ambientTemperatureC,
 		kind: 'ambient',
 	});
 
-	const airFitOutOfRange = lastState.gapMeanTemperatures.some(
-		(temperatureK) => temperatureK < 300 || temperatureK > 900,
-	);
-
 	return {
-		iterations: iteration,
-		converged,
-		errorK,
-		heatFluxWm2: lastState.heatFluxWm2,
-		totalResistance: lastState.totalResistance,
+		totalResistance,
 		sourceTemperatureC: inputs.sourceTemperatureC,
 		ambientTemperatureC: inputs.ambientTemperatureC,
 		layers: layerResults,
 		interfaces: interfaceResults,
 		back,
 		temperatureNodes,
-		airFitOutOfRange,
+		airFitOutOfRange: evaluation.gapMeanTemperatures.some(
+			(temperatureK) => temperatureK < 300 || temperatureK > 900,
+		),
+	};
+}
+
+export function solveThermalNetwork(inputs: NetworkInputs): ThermalNetworkResult {
+	const issues = validateNetworkInputs(inputs);
+	if (issues.length > 0) {
+		throw new ThermalNetworkError(issues.map((entry) => entry.message).join(' '));
+	}
+
+	const hotK = inputs.sourceTemperatureC + KELVIN_OFFSET;
+	const ambientK = inputs.ambientTemperatureC + KELVIN_OFFSET;
+	const layerCount = inputs.layers.length;
+	const junctionCount = layerCount * 2;
+	const totalSegmentCount = layerCount * 2 + 1;
+
+	let junctionTemperatures = Array.from(
+		{ length: junctionCount },
+		(_, index) => hotK + ((ambientK - hotK) * (index + 1)) / totalSegmentCount,
+	);
+
+	let iteration = 0;
+	let errorK = Number.POSITIVE_INFINITY;
+
+	while (errorK > inputs.toleranceK && iteration < inputs.maxIterations) {
+		const previousTemperatures = junctionTemperatures.slice();
+		const evaluation = evaluateNetwork(inputs, previousTemperatures);
+		const totalResistance =
+			evaluation.interfaceResistances.reduce((sum, value) => sum + value, 0) +
+			evaluation.layerResistances.reduce((sum, value) => sum + value, 0) +
+			evaluation.backResistance;
+		const heatFluxWm2 = (hotK - ambientK) / totalResistance;
+
+		let currentK = hotK;
+		const nextTemperatures = new Array<number>(junctionCount);
+		for (let index = 0; index < layerCount; index += 1) {
+			currentK -= heatFluxWm2 * evaluation.interfaceResistances[index];
+			nextTemperatures[2 * index] = currentK;
+			currentK -= heatFluxWm2 * evaluation.layerResistances[index];
+			nextTemperatures[2 * index + 1] = currentK;
+		}
+
+		for (let index = 0; index < junctionCount; index += 1) {
+			junctionTemperatures[index] =
+				inputs.relaxation * nextTemperatures[index] +
+				(1 - inputs.relaxation) * previousTemperatures[index];
+		}
+
+		errorK = junctionTemperatures.reduce(
+			(maximum, value, index) => Math.max(maximum, Math.abs(value - previousTemperatures[index])),
+			0,
+		);
+		iteration += 1;
+	}
+
+	const converged = Number.isFinite(errorK) && errorK <= inputs.toleranceK;
+	const snapshot = buildSnapshot(inputs, junctionTemperatures);
+	const heatFluxWm2 = (hotK - ambientK) / snapshot.totalResistance;
+
+	return {
+		...snapshot,
+		iterations: iteration,
+		converged,
+		errorK,
+		heatFluxWm2,
+	};
+}
+
+function solveTridiagonal(
+	lower: number[],
+	diagonal: number[],
+	upper: number[],
+	rhs: number[],
+): number[] {
+	const nodeCount = diagonal.length;
+	const modifiedUpper = new Array<number>(nodeCount).fill(0);
+	const modifiedRhs = new Array<number>(nodeCount).fill(0);
+
+	modifiedUpper[0] = upper[0] / diagonal[0];
+	modifiedRhs[0] = rhs[0] / diagonal[0];
+
+	for (let index = 1; index < nodeCount; index += 1) {
+		const denominator = diagonal[index] - lower[index] * modifiedUpper[index - 1];
+		modifiedUpper[index] = index < nodeCount - 1 ? upper[index] / denominator : 0;
+		modifiedRhs[index] =
+			(rhs[index] - lower[index] * modifiedRhs[index - 1]) / denominator;
+	}
+
+	const solution = new Array<number>(nodeCount).fill(0);
+	solution[nodeCount - 1] = modifiedRhs[nodeCount - 1];
+	for (let index = nodeCount - 2; index >= 0; index -= 1) {
+		solution[index] =
+			modifiedRhs[index] - modifiedUpper[index] * solution[index + 1];
+	}
+	return solution;
+}
+
+function buildTransientStep(
+	inputs: NetworkInputs,
+	timeS: number,
+	nodeTemperaturesK: number[],
+): TransientStepResult {
+	const evaluation = evaluateNetwork(inputs, nodeTemperaturesK);
+	const sourceK = inputs.sourceTemperatureC + KELVIN_OFFSET;
+	const ambientK = inputs.ambientTemperatureC + KELVIN_OFFSET;
+	const layerMeans = inputs.layers.map(
+		(_layer, index) =>
+			(nodeTemperaturesK[2 * index] +
+				nodeTemperaturesK[2 * index + 1]) /
+				2 -
+			KELVIN_OFFSET,
+	);
+	const firstResistance = evaluation.interfaceResistances[0];
+	const sourceHeatFluxWm2 =
+		firstResistance > 0
+			? (sourceK - nodeTemperaturesK[0]) / firstResistance
+			: null;
+	const ambientHeatFluxWm2 =
+		(nodeTemperaturesK[nodeTemperaturesK.length - 1] - ambientK) /
+		evaluation.backResistance;
+
+	return {
+		timeS,
+		nodeTemperaturesC: nodeTemperaturesK.map((value) => value - KELVIN_OFFSET),
+		layerMeanTemperaturesC: layerMeans,
+		sourceHeatFluxWm2,
+		ambientHeatFluxWm2,
+	};
+}
+
+export function solveTransientNetwork(
+	inputs: NetworkInputs,
+	settings: TransientSettings,
+): TransientNetworkResult {
+	const issues = validateTransientInputs(inputs, settings);
+	if (issues.length > 0) {
+		throw new ThermalNetworkError(issues.map((entry) => entry.message).join(' '));
+	}
+
+	const sourceK = inputs.sourceTemperatureC + KELVIN_OFFSET;
+	const ambientK = inputs.ambientTemperatureC + KELVIN_OFFSET;
+	const initialK = settings.initialTemperatureC + KELVIN_OFFSET;
+	const nodeCount = inputs.layers.length * 2;
+	const capacities: number[] = [];
+
+	for (const layer of inputs.layers) {
+		const halfCapacity =
+			(layer.densityKgM3 * layer.specificHeatJkgK * layer.thicknessM) / 2;
+		capacities.push(halfCapacity, halfCapacity);
+	}
+
+	const times = [0];
+	let currentTime = 0;
+	while (currentTime < settings.finalTimeS - 1e-12) {
+		currentTime = Math.min(currentTime + settings.timeStepS, settings.finalTimeS);
+		times.push(currentTime);
+	}
+
+	let nodeTemperaturesK = new Array<number>(nodeCount).fill(initialK);
+	const steps: TransientStepResult[] = [
+		buildTransientStep(inputs, 0, nodeTemperaturesK),
+	];
+
+	for (let stepIndex = 1; stepIndex < times.length; stepIndex += 1) {
+		const stepS = times[stepIndex] - times[stepIndex - 1];
+		const evaluation = evaluateNetwork(inputs, nodeTemperaturesK);
+		const conductances: number[] = [];
+
+		for (let index = 0; index < inputs.layers.length; index += 1) {
+			const interfaceResistanceValue = evaluation.interfaceResistances[index];
+			conductances.push(
+				interfaceResistanceValue > 0 && Number.isFinite(interfaceResistanceValue)
+					? 1 / interfaceResistanceValue
+					: MAX_CONDUCTANCE,
+			);
+			conductances.push(1 / evaluation.layerResistances[index]);
+		}
+		conductances.push(1 / evaluation.backResistance);
+
+		const lower = new Array<number>(nodeCount).fill(0);
+		const diagonal = new Array<number>(nodeCount).fill(0);
+		const upper = new Array<number>(nodeCount).fill(0);
+		const rhs = new Array<number>(nodeCount).fill(0);
+
+		for (let index = 0; index < nodeCount; index += 1) {
+			const leftConductance = conductances[index];
+			const rightConductance = conductances[index + 1];
+			const capacitanceTerm = capacities[index] / stepS;
+			diagonal[index] =
+				capacitanceTerm + leftConductance + rightConductance;
+			rhs[index] = capacitanceTerm * nodeTemperaturesK[index];
+			if (index > 0) {
+				lower[index] = -leftConductance;
+			} else {
+				rhs[index] += leftConductance * sourceK;
+			}
+			if (index < nodeCount - 1) {
+				upper[index] = -rightConductance;
+			} else {
+				rhs[index] += rightConductance * ambientK;
+			}
+		}
+
+		nodeTemperaturesK = solveTridiagonal(lower, diagonal, upper, rhs);
+		steps.push(buildTransientStep(inputs, times[stepIndex], nodeTemperaturesK));
+	}
+
+	return {
+		settings: { ...settings },
+		steps,
+		final: buildSnapshot(inputs, nodeTemperaturesK),
 	};
 }
