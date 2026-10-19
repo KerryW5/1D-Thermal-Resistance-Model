@@ -23,6 +23,7 @@ export interface LayerInput {
 export interface InterfaceInput {
 	type: InterfaceType;
 	gapThicknessM?: number;
+	dissipationWm2?: number;
 	adhesiveThicknessM?: number;
 	adhesiveConductivityWmK?: number;
 	contactResistanceM2KW?: number;
@@ -37,6 +38,7 @@ export interface NetworkInputs {
 	backConvectionWm2K: number;
 	airFitIntercept: number;
 	airFitSlope: number;
+	gapConvectionFactor: number;
 	toleranceK: number;
 	maxIterations: number;
 	relaxation: number;
@@ -65,8 +67,10 @@ export interface InterfaceResult {
 	upstreamTemperatureC: number;
 	downstreamTemperatureC: number;
 	gapThicknessM?: number;
+	dissipationWm2?: number;
 	effectiveEmissivity?: number;
 	airConductivityWmK?: number;
+	gapConvectionFactor?: number;
 	gapMeanTemperatureK?: number;
 	conductionResistance?: number;
 	radiationResistance?: number;
@@ -118,6 +122,9 @@ export interface ThermalNetworkResult extends NetworkSnapshot {
 	converged: boolean;
 	errorK: number;
 	heatFluxWm2: number;
+	sourceHeatFluxWm2: number;
+	ambientHeatFluxWm2: number;
+	totalDissipationWm2: number;
 }
 
 export interface TransientStepResult {
@@ -215,6 +222,10 @@ export function validateNetworkInputs(inputs: NetworkInputs): ValidationIssue[] 
 		issues.push(issue('airFitSlope', 'Air-fit slope cannot be negative.'));
 	}
 
+	if (!isFiniteNumber(inputs.gapConvectionFactor) || inputs.gapConvectionFactor <= 0) {
+		issues.push(issue('gapConvectionFactor', 'Air-gap convection factor must be greater than zero.'));
+	}
+
 	if (!isFiniteNumber(inputs.toleranceK) || inputs.toleranceK <= 0) {
 		issues.push(issue('toleranceK', 'Convergence tolerance must be greater than zero.'));
 	}
@@ -281,6 +292,18 @@ export function validateNetworkInputs(inputs: NetworkInputs): ValidationIssue[] 
 				case 'air-gap':
 					if (!isFiniteNumber(networkInterface.gapThicknessM) || networkInterface.gapThicknessM <= 0) {
 						issues.push(issue(`${prefix}.gapThicknessM`, 'Air-gap thickness must be greater than zero.'));
+					}
+					if (
+						networkInterface.dissipationWm2 !== undefined &&
+						(!isFiniteNumber(networkInterface.dissipationWm2) ||
+							networkInterface.dissipationWm2 < 0)
+					) {
+						issues.push(
+							issue(
+								`${prefix}.dissipationWm2`,
+								'Air-flow dissipation must be zero or greater.',
+							),
+						);
 					}
 					break;
 				case 'adhesive':
@@ -460,7 +483,8 @@ function interfaceResistance(
 		index === 0 ? inputs.sourceEmissivity : inputs.layers[index - 1].backEmissivity;
 	const downstreamEmissivity = inputs.layers[index].frontEmissivity;
 	const gapEmissivity = effectiveGapEmissivity(upstreamEmissivity, downstreamEmissivity);
-	const conductionResistance = gapThickness / conductivity;
+	const effectiveConductivity = conductivity * inputs.gapConvectionFactor;
+	const conductionResistance = gapThickness / effectiveConductivity;
 	const radiationCoefficient =
 		STEFAN_BOLTZMANN *
 		gapEmissivity *
@@ -476,8 +500,10 @@ function interfaceResistance(
 			type: 'air-gap',
 			resistance,
 			gapThicknessM: gapThickness,
+			dissipationWm2: networkInterface.dissipationWm2 ?? 0,
 			effectiveEmissivity: gapEmissivity,
 			airConductivityWmK: conductivity,
+			gapConvectionFactor: inputs.gapConvectionFactor,
 			gapMeanTemperatureK: gapMeanK,
 			conductionResistance,
 			radiationResistance,
@@ -669,6 +695,69 @@ function buildSnapshot(
 	};
 }
 
+function gapDissipations(inputs: NetworkInputs): number[] {
+	return inputs.layers.map((_layer, index) => {
+		const networkInterface = inputs.interfaces[index];
+		return networkInterface.type === 'air-gap' ? (networkInterface.dissipationWm2 ?? 0) : 0;
+	});
+}
+
+function totalGapDissipationWm2(inputs: NetworkInputs): number {
+	return gapDissipations(inputs).reduce((sum, value) => sum + value, 0);
+}
+
+function computeChainTemperatures(
+	inputs: NetworkInputs,
+	evaluation: NetworkEvaluation,
+	hotK: number,
+	ambientK: number,
+): {
+	temperatures: number[];
+	sourceHeatFluxWm2: number;
+	ambientHeatFluxWm2: number;
+	totalDissipationWm2: number;
+} {
+	const layerCount = inputs.layers.length;
+	const dissipations = gapDissipations(inputs);
+	const totalResistance =
+		evaluation.interfaceResistances.reduce((sum, value) => sum + value, 0) +
+		evaluation.layerResistances.reduce((sum, value) => sum + value, 0) +
+		evaluation.backResistance;
+
+	let cumulativeDissipation = 0;
+	let dissipationOffset = 0;
+	for (let index = 0; index < layerCount; index += 1) {
+		dissipationOffset += evaluation.interfaceResistances[index] * cumulativeDissipation;
+		cumulativeDissipation += dissipations[index];
+		dissipationOffset += evaluation.layerResistances[index] * cumulativeDissipation;
+	}
+	dissipationOffset += evaluation.backResistance * cumulativeDissipation;
+
+	const sourceHeatFluxWm2 = (hotK - ambientK + dissipationOffset) / totalResistance;
+	const temperatures = new Array<number>(layerCount * 2);
+	let currentK = hotK;
+	cumulativeDissipation = 0;
+
+	for (let index = 0; index < layerCount; index += 1) {
+		currentK -=
+			evaluation.interfaceResistances[index] *
+			(sourceHeatFluxWm2 - cumulativeDissipation);
+		temperatures[2 * index] = currentK;
+		cumulativeDissipation += dissipations[index];
+		currentK -=
+			evaluation.layerResistances[index] *
+			(sourceHeatFluxWm2 - cumulativeDissipation);
+		temperatures[2 * index + 1] = currentK;
+	}
+
+	return {
+		temperatures,
+		sourceHeatFluxWm2,
+		ambientHeatFluxWm2: sourceHeatFluxWm2 - cumulativeDissipation,
+		totalDissipationWm2: cumulativeDissipation,
+	};
+}
+
 export function solveThermalNetwork(inputs: NetworkInputs): ThermalNetworkResult {
 	const issues = validateNetworkInputs(inputs);
 	if (issues.length > 0) {
@@ -692,20 +781,8 @@ export function solveThermalNetwork(inputs: NetworkInputs): ThermalNetworkResult
 	while (errorK > inputs.toleranceK && iteration < inputs.maxIterations) {
 		const previousTemperatures = junctionTemperatures.slice();
 		const evaluation = evaluateNetwork(inputs, previousTemperatures);
-		const totalResistance =
-			evaluation.interfaceResistances.reduce((sum, value) => sum + value, 0) +
-			evaluation.layerResistances.reduce((sum, value) => sum + value, 0) +
-			evaluation.backResistance;
-		const heatFluxWm2 = (hotK - ambientK) / totalResistance;
-
-		let currentK = hotK;
-		const nextTemperatures = new Array<number>(junctionCount);
-		for (let index = 0; index < layerCount; index += 1) {
-			currentK -= heatFluxWm2 * evaluation.interfaceResistances[index];
-			nextTemperatures[2 * index] = currentK;
-			currentK -= heatFluxWm2 * evaluation.layerResistances[index];
-			nextTemperatures[2 * index + 1] = currentK;
-		}
+		const chain = computeChainTemperatures(inputs, evaluation, hotK, ambientK);
+		const nextTemperatures = chain.temperatures;
 
 		for (let index = 0; index < junctionCount; index += 1) {
 			junctionTemperatures[index] =
@@ -722,14 +799,22 @@ export function solveThermalNetwork(inputs: NetworkInputs): ThermalNetworkResult
 
 	const converged = Number.isFinite(errorK) && errorK <= inputs.toleranceK;
 	const snapshot = buildSnapshot(inputs, junctionTemperatures);
-	const heatFluxWm2 = (hotK - ambientK) / snapshot.totalResistance;
+	const totalDissipationWm2 = totalGapDissipationWm2(inputs);
+	const ambientHeatFluxWm2 =
+		snapshot.back.resistance > 0
+			? snapshot.back.temperatureDropK / snapshot.back.resistance
+			: 0;
+	const sourceHeatFluxWm2 = ambientHeatFluxWm2 + totalDissipationWm2;
 
 	return {
 		...snapshot,
 		iterations: iteration,
 		converged,
 		errorK,
-		heatFluxWm2,
+		heatFluxWm2: sourceHeatFluxWm2,
+		sourceHeatFluxWm2,
+		ambientHeatFluxWm2,
+		totalDissipationWm2,
 	};
 }
 
@@ -867,6 +952,15 @@ export function solveTransientNetwork(
 				rhs[index] += rightConductance * ambientK;
 			}
 		}
+
+		inputs.interfaces.forEach((networkInterface, index) => {
+			if (
+				networkInterface.type === 'air-gap' &&
+				(networkInterface.dissipationWm2 ?? 0) !== 0
+			) {
+				rhs[2 * index] -= networkInterface.dissipationWm2 ?? 0;
+			}
+		});
 
 		nodeTemperaturesK = solveTridiagonal(lower, diagonal, upper, rhs);
 		steps.push(buildTransientStep(inputs, times[stepIndex], nodeTemperaturesK));

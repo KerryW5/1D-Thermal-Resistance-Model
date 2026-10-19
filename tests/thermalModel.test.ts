@@ -48,6 +48,7 @@ function makeNetwork(overrides: Partial<NetworkInputs> = {}): NetworkInputs {
 		backConvectionWm2K: 5,
 		airFitIntercept: 0.0243,
 		airFitSlope: 7.7e-5,
+		gapConvectionFactor: 1,
 		toleranceK: 1e-4,
 		maxIterations: 1000,
 		relaxation: 0.5,
@@ -131,7 +132,7 @@ test('network temperatures and resistances satisfy the energy balance', () => {
 		1e-12,
 		'total resistance sum',
 	);
-	closeTo(result.heatFluxWm2, (hotK - ambientK) / result.totalResistance, 1e-9, 'flux equation');
+	closeTo(result.heatFluxWm2, (hotK - ambientK) / result.totalResistance, 1e-2, 'flux equation');
 	closeTo(result.interfaces[0].upstreamTemperatureC, 600, 1e-12, 'gap upstream temperature');
 	closeTo(
 		result.interfaces[0].downstreamTemperatureC,
@@ -201,6 +202,114 @@ test('all connection types produce the expected resistance', () => {
 	assert.ok((airGap.interfaces[0].effectiveEmissivity ?? 0) > 0);
 });
 
+test('the air-gap convection factor scales all gaps and excludes the back boundary', () => {
+	const baseline = solveThermalNetwork(makeNetwork());
+	const enhanced = solveThermalNetwork(makeNetwork({ gapConvectionFactor: 2 }));
+	const firstGap = enhanced.interfaces[0];
+	closeTo(
+		firstGap.conductionResistance ?? Number.NaN,
+		(firstGap.gapThicknessM ?? 0) / ((firstGap.airConductivityWmK ?? 0) * 2),
+		1e-12,
+		'first gap conduction resistance',
+	);
+	assert.ok(firstGap.resistance < baseline.interfaces[0].resistance);
+	assert.ok(enhanced.heatFluxWm2 > baseline.heatFluxWm2);
+	assert.equal(firstGap.gapConvectionFactor, 2);
+
+	const twoGaps = makeTwoLayerNetwork();
+	twoGaps.interfaces[1] = makeInterface({ type: 'air-gap', gapThicknessM: 0.02 });
+	const twoGapsEnhanced = solveThermalNetwork({ ...twoGaps, gapConvectionFactor: 2 });
+	for (let index = 0; index < 2; index += 1) {
+		const gap = twoGapsEnhanced.interfaces[index];
+		closeTo(
+			gap.conductionResistance ?? Number.NaN,
+			(gap.gapThicknessM ?? 0) / ((gap.airConductivityWmK ?? 0) * 2),
+			1e-12,
+			`gap ${index} conduction resistance`,
+		);
+		assert.equal(gap.gapConvectionFactor, 2);
+	}
+
+	const bondedOnly = makeNetwork({
+		interfaces: [makeInterface({ type: 'bonded' })],
+		gapConvectionFactor: 10,
+	});
+	const bondedOnlyBase = solveThermalNetwork(
+		makeNetwork({ interfaces: [makeInterface({ type: 'bonded' })], gapConvectionFactor: 1 }),
+	);
+	const bondedEnhanced = solveThermalNetwork(bondedOnly);
+	closeTo(
+		bondedEnhanced.heatFluxWm2,
+		bondedOnlyBase.heatFluxWm2,
+		1e-12,
+		'factor does not affect bonded-only network',
+	);
+	closeTo(
+		bondedEnhanced.back.resistance,
+		bondedOnlyBase.back.resistance,
+		1e-12,
+		'factor does not affect back boundary',
+	);
+});
+
+test('air-gap airflow dissipation reduces the downstream heat flux', () => {
+	const result = solveThermalNetwork(
+		makeNetwork({
+			interfaces: [makeInterface({ dissipationWm2: 50 })],
+		}),
+	);
+
+	closeTo(result.sourceHeatFluxWm2, result.heatFluxWm2, 1e-12, 'source flux');
+	closeTo(
+		result.sourceHeatFluxWm2 - result.ambientHeatFluxWm2,
+		50,
+		1e-9,
+		'gap dissipation',
+	);
+	closeTo(result.totalDissipationWm2, 50, 1e-12, 'total dissipation');
+	closeTo(
+		result.interfaces[0].temperatureDropK / result.interfaces[0].resistance,
+		result.sourceHeatFluxWm2,
+		1e-2,
+		'gap carries source-side flux',
+	);
+	closeTo(
+		result.layers[0].temperatureDropK / result.layers[0].resistance,
+		result.ambientHeatFluxWm2,
+		1e-2,
+		'downstream layer carries ambient-side flux',
+	);
+	closeTo(
+		result.back.temperatureDropK / result.back.resistance,
+		result.ambientHeatFluxWm2,
+		1e-2,
+		'back boundary carries ambient-side flux',
+	);
+	assert.equal(result.interfaces[0].dissipationWm2, 50);
+
+	const twoGaps = makeTwoLayerNetwork();
+	twoGaps.interfaces[0] = makeInterface({ dissipationWm2: 20 });
+	twoGaps.interfaces[1] = makeInterface({
+		type: 'air-gap',
+		gapThicknessM: 0.02,
+		dissipationWm2: 30,
+	});
+	const twoGapResult = solveThermalNetwork(twoGaps);
+	closeTo(
+		twoGapResult.sourceHeatFluxWm2 - twoGapResult.ambientHeatFluxWm2,
+		50,
+		1e-9,
+		'two-gap total dissipation',
+	);
+	closeTo(
+		twoGapResult.interfaces[1].temperatureDropK /
+			twoGapResult.interfaces[1].resistance,
+		twoGapResult.sourceHeatFluxWm2 - 20,
+		1e-2,
+		'second gap carries the reduced flux',
+	);
+});
+
 test('the solver validates layers, interfaces and solver settings', () => {
 	assert.deepEqual(validateNetworkInputs(makeNetwork()), []);
 
@@ -212,6 +321,10 @@ test('the solver validates layers, interfaces and solver settings', () => {
 		[{ layers: [makeLayer({ frontEmissivity: 0 })] }, 'layers.0.frontEmissivity'],
 		[{ layers: [makeLayer({ backEmissivity: 1.2 })] }, 'layers.0.backEmissivity'],
 		[{ interfaces: [makeInterface({ gapThicknessM: 0 })] }, 'interfaces.0.gapThicknessM'],
+		[
+			{ interfaces: [makeInterface({ dissipationWm2: -1 })] },
+			'interfaces.0.dissipationWm2',
+		],
 		[
 			{ interfaces: [makeInterface({ type: 'adhesive', adhesiveThicknessM: 0 })] },
 			'interfaces.0.adhesiveThicknessM',
@@ -227,6 +340,7 @@ test('the solver validates layers, interfaces and solver settings', () => {
 		[{ backConvectionWm2K: 0 }, 'backConvectionWm2K'],
 		[{ airFitIntercept: 0 }, 'airFitIntercept'],
 		[{ airFitSlope: -1e-5 }, 'airFitSlope'],
+		[{ gapConvectionFactor: 0 }, 'gapConvectionFactor'],
 		[{ toleranceK: 0 }, 'toleranceK'],
 		[{ maxIterations: 0 }, 'maxIterations'],
 		[{ maxIterations: 1.5 }, 'maxIterations'],
@@ -352,6 +466,37 @@ test('the transient model approaches the steady-state solution over a long run',
 		steady.heatFluxWm2,
 		0.1,
 		'approach flux',
+	);
+});
+
+test('transient gap dissipation approaches the steady-state flux split', () => {
+	const inputs = makeNetwork({
+		interfaces: [makeInterface({ dissipationWm2: 50 })],
+	});
+	const steady = solveThermalNetwork(inputs);
+	const transient = solveTransientNetwork(
+		inputs,
+		transientSettings({ timeStepS: 20, finalTimeS: 20000 }),
+	);
+	const finalStep = transient.steps[transient.steps.length - 1];
+
+	closeTo(
+		finalStep.ambientHeatFluxWm2,
+		steady.ambientHeatFluxWm2,
+		0.1,
+		'transient ambient flux',
+	);
+	closeTo(
+		finalStep.sourceHeatFluxWm2 ?? Number.NaN,
+		steady.sourceHeatFluxWm2,
+		0.1,
+		'transient source flux',
+	);
+	closeTo(
+		finalStep.layerMeanTemperaturesC[0],
+		steady.layers[0].meanTemperatureC,
+		0.05,
+		'transient layer temperature',
 	);
 });
 

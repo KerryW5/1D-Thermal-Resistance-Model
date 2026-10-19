@@ -23,6 +23,8 @@ site can be hosted on any static file host.
 - Connection types: air gap, bonded, adhesive layer and contact resistance
 - Per-side surface finishes: bare material, reflective foil or custom emissivity
 - Air-gap conduction in parallel with linearised radiation
+- Global air-gap convection factor in Advanced settings, applied to every air gap but not the ambient back boundary
+- Per-air-gap assumed airflow dissipation in W/m²
 - Back-surface convection and radiation at the ambient boundary
 - Live heat flux, node temperatures, resistance breakdown and temperature-profile chart
 - Transient temperature-history chart and time-history table
@@ -54,6 +56,19 @@ The **Source model · 1 layer** template reproduces the original Python benchmar
 - Foil-face temperature `T1`: `173.39 °C`
 - Composite-back temperature `T2`: `165.50 °C`
 - Total resistance: `0.2710 m²·K/W`
+
+The **Setup1** template is also available in the template selector:
+
+1. 800 °C heat source
+2. 20 mm air gap
+3. 1 mm aluminium sheet with reflective foil on the front
+4. 20 mm air gap
+5. 1 mm aluminium sheet with reflective foil on the front
+6. Adhesive layer
+7. 5 mm Nomex honeycomb
+8. Adhesive layer
+9. 2 mm carbon fibre plate
+10. Ambient boundary at 30 °C
 
 ## Transient model
 
@@ -97,11 +112,21 @@ Radiation is linearised between infinite parallel plates. The effective emissivi
 calculated from the facing surface finishes. A surface set to **Bare** uses the material emissivity,
 **Reflective foil** uses the global foil emissivity, and **Custom ε** uses the entered value.
 
+The Advanced settings include a global **air-gap convection factor** (default `1.0`). It multiplies
+the air-side conduction/convection conductance in every air gap. Radiation is unchanged, and the
+ambient back boundary is not scaled.
+
+Each air-gap connection also accepts an assumed **airflow dissipation** in W/m². This heat is
+removed from that gap, so the heat flux downstream of the gap is reduced by the specified amount.
+The gap temperature drop is still evaluated with the upstream heat flux. This allows the source-side
+and ambient-side heat fluxes to differ in steady state.
+
 Other assumptions:
 
-- One-dimensional heat transfer with uniform heat flux in steady state
+- One-dimensional heat transfer; heat flux is uniform along each segment and can change at gaps with airflow removal
 - Constant material conductivity, density and specific heat
 - No contact resistance for bonded connections
+- Airflow dissipation removes heat at the downstream side of each air gap
 - Air conductivity uses the linear fit `k_air = 0.0243 + 7.7e-5 · T[°C]`, intended for roughly 300–900 K
 - Steady state uses damped fixed-point iteration
 - Transient mode uses implicit backward Euler with temperature-dependent resistances lagged at each step

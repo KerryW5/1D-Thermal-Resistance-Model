@@ -186,7 +186,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			<details class="advanced" id="advanced-settings">
 				<summary>
 					<span class="summary-title">Advanced settings</span>
-					<span class="summary-hint" id="advanced-hint">Foil optics, air fit, solver</span>
+					<span class="summary-hint" id="advanced-hint">Foil, air fit, gap convection, solver</span>
 					<span class="chevron" aria-hidden="true"></span>
 				</summary>
 
@@ -252,6 +252,27 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 								/>
 								<p class="field-help" id="help-airFitSlope">
 									The source fit is intended for roughly 300–900 K.
+								</p>
+							</div>
+
+							<div class="field">
+								<div class="field-label-row">
+									<label for="gapConvectionFactor">Air-gap convection factor</label>
+									<span class="unit">×</span>
+								</div>
+								<input
+									id="gapConvectionFactor"
+									data-path="gapConvectionFactor"
+									type="number"
+									value={ADVANCED_DEFAULTS.gapConvectionFactor}
+									step="0.05"
+									min="0.000001"
+									inputmode="decimal"
+									aria-describedby="help-gapConvectionFactor"
+								/>
+								<p class="field-help" id="help-gapConvectionFactor">
+									Multiplies the air-side conductance in every air gap. Radiation is
+									unchanged and the ambient back boundary is not affected.
 								</p>
 							</div>
 						</div>
@@ -370,13 +391,15 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 					<div class="method-body">
 						<p>
 							Material layers are conduction resistances in series. Every connection between the
-							source, layers and ambient contributes its own resistance. In steady-state mode the
-							same heat flux passes through the whole stack.
+							source, layers and ambient contributes its own resistance. In steady-state mode heat
+							flux is constant through the stack unless an air gap removes an assumed airflow
+							dissipation.
 						</p>
 						<div class="formula-list">
 							<code>q″ = (T<sub>hot</sub> − T<sub>∞</sub>) / Σ R″</code>
 							<code>R″<sub>layer</sub> = L<sub>layer</sub> / k<sub>layer</sub></code>
 							<code>R″<sub>air gap</sub> = [ L<sub>gap</sub> / k<sub>air</sub>(T<sub>mean</sub>) ∥ 1 / h<sub>rad,gap</sub> ]</code>
+							<code>q″<sub>after gap</sub> = q″<sub>before gap</sub> − D<sub>gap</sub></code>
 							<code>R″<sub>adhesive</sub> = L<sub>adhesive</sub> / k<sub>adhesive</sub></code>
 							<code>R″<sub>back</sub> = [ 1 / h<sub>conv,back</sub> ∥ 1 / h<sub>rad,back</sub> ]</code>
 							<code>h<sub>rad</sub> = σ ε<sub>eff</sub> (T<sub>a</sub>² + T<sub>b</sub>²)(T<sub>a</sub> + T<sub>b</sub>)</code>
@@ -395,6 +418,8 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 							<li>Bonded connections have zero thermal resistance.</li>
 							<li>Contact-resistance connections use the specified R″ directly.</li>
 							<li>Air gaps combine stagnant-air conduction with linearised parallel-plate radiation.</li>
+							<li>Each air gap can remove an assumed airflow dissipation D<sub>gap</sub>; the downstream heat flux is reduced by that amount.</li>
+							<li>The global air-gap convection factor scales the air-side conductance of every gap; radiation and the ambient back boundary are unaffected.</li>
 							<li>Bare surfaces use the material emissivity, reflective foil uses the global foil ε, and custom surfaces use the entered ε.</li>
 							<li>The air conductivity fit is a linear approximation intended for roughly 300–900 K.</li>
 							<li>Steady-state node temperatures use damped fixed-point iteration.</li>
@@ -459,6 +484,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		'foilEmissivity',
 		'airFitIntercept',
 		'airFitSlope',
+		'gapConvectionFactor',
 		'toleranceK',
 		'maxIterations',
 		'relaxation',
@@ -793,24 +819,46 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 	function interfaceParamsHtml(networkInterface: NetworkState['interfaces'][number], index: number): string {
 		if (networkInterface.type === 'air-gap') {
 			const surfaces = gapSurfaces(index);
-			return `<div class="field">
-					<div class="field-label-row">
-						<label for="interface-${index}-gap">Gap thickness</label>
-						<span class="unit">mm</span>
+			return `<div class="field-grid">
+					<div class="field">
+						<div class="field-label-row">
+							<label for="interface-${index}-gap">Gap thickness</label>
+							<span class="unit">mm</span>
+						</div>
+						<input
+							id="interface-${index}-gap"
+							data-path="interfaces.${index}.gapThicknessMm"
+							type="number"
+							value="${numberInputValue(networkInterface.gapThicknessMm)}"
+							step="0.1"
+							min="0.001"
+							inputmode="decimal"
+							aria-describedby="help-interface-${index}-gap"
+						/>
+						<p class="field-help" id="help-interface-${index}-gap">
+							Stagnant air conduction in parallel with radiation.
+						</p>
 					</div>
-					<input
-						id="interface-${index}-gap"
-						data-path="interfaces.${index}.gapThicknessMm"
-						type="number"
-						value="${numberInputValue(networkInterface.gapThicknessMm)}"
-						step="0.1"
-						min="0.001"
-						inputmode="decimal"
-						aria-describedby="help-interface-${index}-gap"
-					/>
-					<p class="field-help" id="help-interface-${index}-gap">
-						Stagnant air conduction in parallel with radiation.
-					</p>
+					<div class="field">
+						<div class="field-label-row">
+							<label for="interface-${index}-dissipation">Air-flow dissipation</label>
+							<span class="unit">W/m²</span>
+						</div>
+						<input
+							id="interface-${index}-dissipation"
+							data-path="interfaces.${index}.dissipationWm2"
+							type="number"
+							value="${numberInputValue(networkInterface.dissipationWm2)}"
+							step="1"
+							min="0"
+							inputmode="decimal"
+							aria-describedby="help-interface-${index}-dissipation"
+						/>
+						<p class="field-help" id="help-interface-${index}-dissipation">
+							Assumed heat removed from this gap by flowing air. The downstream heat flux
+							drops by this amount.
+						</p>
+					</div>
 				</div>
 				<p class="interface-note">
 					Facing surfaces ε
@@ -1227,8 +1275,8 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		transientSettings.hidden = !transient;
 		steadySolverSettings.hidden = transient;
 		advancedHint.textContent = transient
-			? 'Foil optics, air fit'
-			: 'Foil optics, air fit, solver';
+			? 'Foil, air fit, gap convection'
+			: 'Foil, air fit, gap convection, solver';
 		resultsSubtitle.textContent = transient
 			? 'Live transient time history'
 			: 'Live steady-state solution';
@@ -1567,16 +1615,21 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 	}
 
 	function heroHtml(result: ThermalNetworkResult): string {
+		const hasDissipation = result.totalDissipationWm2 > 0;
+		const label = hasDissipation ? 'Source-side heat flux' : 'Heat flux';
+		const secondary = hasDissipation
+			? `${fixedThree.format(result.heatFluxWm2 / 1000)} kW/m² · ambient side ${formatFlux(result.ambientHeatFluxWm2)} W/m² · removed ${formatFlux(result.totalDissipationWm2)} W/m²`
+			: `${fixedThree.format(result.heatFluxWm2 / 1000)} kW/m²`;
 		return `<div class="result-hero">
 			<div class="hero-heading">
-				<p class="result-label">Heat flux <span class="symbol">q″</span></p>
+				<p class="result-label">${label} <span class="symbol">q″</span></p>
 				<span class="hero-unit">per unit area</span>
 			</div>
 			<p class="hero-value">
 				<span>${formatFlux(result.heatFluxWm2)}</span>
 				<span class="hero-metric">W/m²</span>
 			</p>
-			<p class="hero-secondary">${fixedThree.format(result.heatFluxWm2 / 1000)} kW/m²</p>
+			<p class="hero-secondary">${secondary}</p>
 			<div class="hero-meta">
 				<span>Total R″ <strong>${formatResistance(result.totalResistance)}</strong> m²·K/W</span>
 				<span>Layers <strong>${result.layers.length}</strong></span>
@@ -1694,7 +1747,15 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 		const share = total > 0 ? networkInterface.resistance / total : 0;
 		let note = '';
 		if (networkInterface.type === 'air-gap') {
-			note = `ε<sub>eff</sub> ${formatEmissivity(networkInterface.effectiveEmissivity ?? Number.NaN)} · k<sub>air</sub> ${formatProperty(networkInterface.airConductivityWmK ?? Number.NaN)} W/(m·K) · ${formatLength((networkInterface.gapThicknessM ?? 0) * 1000)} mm`;
+			const convectionFactor = networkInterface.gapConvectionFactor ?? 1;
+			const factorNote =
+				Math.abs(convectionFactor - 1) > 1e-9
+					? ` · convection ×${formatProperty(convectionFactor)}`
+					: '';
+			const dissipation = networkInterface.dissipationWm2 ?? 0;
+			const dissipationNote =
+				dissipation > 0 ? ` · air-flow loss ${formatFlux(dissipation)} W/m²` : '';
+			note = `ε<sub>eff</sub> ${formatEmissivity(networkInterface.effectiveEmissivity ?? Number.NaN)} · k<sub>air</sub> ${formatProperty(networkInterface.airConductivityWmK ?? Number.NaN)} W/(m·K) · ${formatLength((networkInterface.gapThicknessM ?? 0) * 1000)} mm${factorNote}${dissipationNote}`;
 		} else if (networkInterface.type === 'bonded') {
 			note = 'Perfect contact · zero resistance';
 		} else if (networkInterface.type === 'adhesive') {
@@ -1811,7 +1872,11 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 					`Node ${index + 2} ${layer.label} ${formatTemperature(layer.frontTemperatureC)} to ${formatTemperature(layer.backTemperatureC)} degrees Celsius`,
 			)
 			.join('. ');
-		liveSummary.textContent = `Heat flux ${formatFlux(result.heatFluxWm2)} watts per square metre. ${layerSummary}. ${result.converged ? `Converged in ${result.iterations} iterations.` : 'The solver did not converge.'}`;
+		const fluxSummary =
+			result.totalDissipationWm2 > 0
+				? `Source-side heat flux ${formatFlux(result.heatFluxWm2)} watts per square metre, ambient side ${formatFlux(result.ambientHeatFluxWm2)} watts per square metre, with ${formatFlux(result.totalDissipationWm2)} watts per square metre removed by air flow in the gaps.`
+				: `Heat flux ${formatFlux(result.heatFluxWm2)} watts per square metre.`;
+		liveSummary.textContent = `${fluxSummary} ${layerSummary}. ${result.converged ? `Converged in ${result.iterations} iterations.` : 'The solver did not converge.'}`;
 	}
 
 	function seriesClass(index: number): string {
@@ -1848,7 +1913,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			: '';
 		return `<div class="status-row">
 			<span class="status-badge is-success">Completed ${result.steps.length - 1} steps · t = ${formatTime(result.settings.finalTimeS)} s · backward Euler</span>
-			<span class="status-note">Heat flux varies along the stack while the layers store energy.</span>
+			<span class="status-note">Heat flux can vary along the stack due to thermal storage and air-gap removal.</span>
 			${warning}
 		</div>`;
 	}
@@ -2276,6 +2341,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			foilEmissivity: state.foilEmissivity,
 			airFitIntercept: state.airFitIntercept,
 			airFitSlope: state.airFitSlope,
+			gapConvectionFactor: state.gapConvectionFactor,
 			toleranceK: state.toleranceK,
 			maxIterations: state.maxIterations,
 			relaxation: state.relaxation,
@@ -2308,6 +2374,7 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			'1D Thermal Network Model',
 			`Template: ${template ? template.name : 'Custom network'}`,
 			`Mode: ${mode === 'steady' ? 'Steady state' : 'Transient'}`,
+			`Air-gap convection factor: ${formatProperty(state.gapConvectionFactor)}`,
 		];
 	}
 
@@ -2323,10 +2390,14 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			),
 			'',
 			'Connections:',
-			...snapshot.interfaces.map(
-				(networkInterface, index) =>
-					`Connection ${index + 1} · ${INTERFACE_TYPE_LABELS[networkInterface.type]}: R ${formatResistance(networkInterface.resistance)} m²·K/W, ΔT ${formatDelta(networkInterface.temperatureDropK)}`,
-			),
+			...snapshot.interfaces.map((networkInterface, index) => {
+				const dissipation = networkInterface.dissipationWm2 ?? 0;
+				const dissipationNote =
+					dissipation > 0
+						? `, air-flow loss ${formatFlux(dissipation)} W/m²`
+						: '';
+				return `Connection ${index + 1} · ${INTERFACE_TYPE_LABELS[networkInterface.type]}: R ${formatResistance(networkInterface.resistance)} m²·K/W, ΔT ${formatDelta(networkInterface.temperatureDropK)}${dissipationNote}`;
+			}),
 			`Back surface: R ${formatResistance(snapshot.back.resistance)} m²·K/W, ΔT ${formatDelta(snapshot.back.temperatureDropK)}`,
 			`Total resistance: ${formatResistance(snapshot.totalResistance)} m²·K/W`,
 		];
@@ -2337,7 +2408,9 @@ const defaultTemplate = NETWORK_TEMPLATES.find((template) => template.id === DEF
 			...summaryHeader('steady'),
 			...summaryNetworkLines(result),
 			'',
-			`Heat flux: ${formatFlux(result.heatFluxWm2)} W/m²`,
+			`Source-side heat flux: ${formatFlux(result.heatFluxWm2)} W/m²`,
+			`Ambient-side heat flux: ${formatFlux(result.ambientHeatFluxWm2)} W/m²`,
+			`Air-flow removal: ${formatFlux(result.totalDissipationWm2)} W/m²`,
 			result.converged
 				? `Solver: converged in ${result.iterations} iterations`
 				: `Solver: stopped after ${result.iterations} iterations without converging`,

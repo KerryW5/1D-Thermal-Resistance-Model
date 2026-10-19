@@ -32,6 +32,7 @@ test('the default example is the carbon fibre plus Nomex network', () => {
 	assert.equal(state.layers[0].label, 'Carbon fibre plate');
 	assert.equal(state.layers[1].label, 'Nomex honeycomb');
 	assert.equal(state.interfaces[0].type, 'air-gap');
+	assert.equal(state.interfaces[0].dissipationWm2, 0);
 	assert.equal(state.interfaces[1].type, 'bonded');
 	assert.deepEqual(validateNetworkState(state), []);
 
@@ -46,7 +47,9 @@ test('the default example is the carbon fibre plus Nomex network', () => {
 	assert.equal(inputs.layers[1].specificHeatJkgK, 1200);
 	assert.equal(inputs.layers[1].frontEmissivity, 0.9);
 	assert.equal(inputs.interfaces[0].gapThicknessM, 0.04);
+	assert.equal(inputs.interfaces[0].dissipationWm2, 0);
 	assert.equal(inputs.interfaces[1].type, 'bonded');
+	assert.equal(inputs.gapConvectionFactor, 1);
 
 	const result = solveThermalNetwork(inputs);
 	assert.equal(result.converged, true);
@@ -74,6 +77,51 @@ test('the source-model template reproduces the Python benchmark', () => {
 	closeTo(result.interfaces[0].resistance, 0.2028258983801135, 1e-6, 'source-model gap R');
 	closeTo(result.layers[0].resistance, 0.00375, 1e-12, 'source-model plate R');
 	closeTo(result.back.resistance, 0.06441986733624089, 1e-6, 'source-model back R');
+});
+
+test('the Setup1 template matches the requested stack', () => {
+	const state = createInitialState('setup-1');
+
+	assert.equal(state.sourceTemperatureC, 800);
+	assert.equal(state.ambientTemperatureC, 30);
+	assert.equal(state.layers.length, 4);
+	assert.deepEqual(
+		state.layers.map((layer) => layer.label),
+		['Aluminium sheet 1', 'Aluminium sheet 2', 'Nomex honeycomb', 'Carbon fibre plate'],
+	);
+	assert.deepEqual(
+		state.layers.map((layer) => layer.thicknessMm),
+		[1, 1, 5, 2],
+	);
+	assert.equal(state.layers[0].materialId, 'aluminium');
+	assert.equal(state.layers[1].materialId, 'aluminium');
+	assert.equal(state.layers[2].materialId, 'nomex');
+	assert.equal(state.layers[3].materialId, 'carbon-fibre');
+	assert.equal(state.layers[0].frontSurface.finish, 'foil');
+	assert.equal(state.layers[1].frontSurface.finish, 'foil');
+	assert.equal(state.layers[0].backSurface.finish, 'bare');
+	assert.equal(state.layers[1].backSurface.finish, 'bare');
+	assert.deepEqual(
+		state.interfaces.map((networkInterface) => networkInterface.type),
+		['air-gap', 'air-gap', 'adhesive', 'adhesive'],
+	);
+	assert.equal(state.interfaces[0].gapThicknessMm, 20);
+	assert.equal(state.interfaces[1].gapThicknessMm, 20);
+	assert.deepEqual(validateNetworkState(state), []);
+
+	const result = solveThermalNetwork(buildNetworkInputs(state));
+	assert.equal(result.converged, true);
+	assert.equal(result.layers.length, 4);
+	closeTo(result.sourceTemperatureC, 800, 1e-12, 'Setup1 source temperature');
+	for (let index = 1; index < result.temperatureNodes.length; index += 1) {
+		assert.ok(
+			result.temperatureNodes[index].temperatureC <=
+				result.temperatureNodes[index - 1].temperatureC + 1e-6,
+			'node temperatures should decrease toward ambient',
+		);
+	}
+	assert.ok(Number.isFinite(result.heatFluxWm2));
+	assert.ok(result.totalResistance > 0);
 });
 
 test('surface finishes resolve to bare, foil or custom emissivity', () => {
@@ -115,11 +163,13 @@ test('applying a template resets the network but preserves advanced settings', (
 	const state = createInitialState();
 	state.foilEmissivity = 0.09;
 	state.toleranceK = 1e-6;
+	state.gapConvectionFactor = 1.5;
 	const next = applyTemplate(state, getTemplate('source-model')!);
 	assert.equal(next.templateId, 'source-model');
 	assert.equal(next.layers.length, 1);
 	assert.equal(next.foilEmissivity, 0.09);
 	assert.equal(next.toleranceK, 1e-6);
+	assert.equal(next.gapConvectionFactor, 1.5);
 	assert.notEqual(next.layers[0].id, state.layers[0].id);
 });
 
@@ -138,6 +188,12 @@ test('UI validation reports the exact editable paths', () => {
 			'layers.0.backSurface.emissivity',
 		],
 		[(state) => { state.interfaces[0].gapThicknessMm = 0; }, 'interfaces.0.gapThicknessMm'],
+		[
+			(state) => {
+				state.interfaces[0].dissipationWm2 = -1;
+			},
+			'interfaces.0.dissipationWm2',
+		],
 		[
 			(state) => {
 				state.interfaces[0] = createInterface('adhesive', { adhesiveThicknessMm: 0 });
@@ -160,6 +216,7 @@ test('UI validation reports the exact editable paths', () => {
 		[(state) => { state.foilEmissivity = 0; }, 'foilEmissivity'],
 		[(state) => { state.airFitIntercept = 0; }, 'airFitIntercept'],
 		[(state) => { state.airFitSlope = -1e-5; }, 'airFitSlope'],
+		[(state) => { state.gapConvectionFactor = 0; }, 'gapConvectionFactor'],
 		[(state) => { state.toleranceK = 0; }, 'toleranceK'],
 		[(state) => { state.maxIterations = 0; }, 'maxIterations'],
 		[(state) => { state.relaxation = 0; }, 'relaxation'],

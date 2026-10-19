@@ -22,6 +22,8 @@ class ThermalNetworkModel:
         # --- Thermal Properties ---
         self.k_plate = 0.8            # Composite conductivity (W/m.K)
         self.h_back_conv = 5.0        # Back surface natural convection (W/m^2.K)
+        self.gap_convection_factor = 1.0  # Multiplier on air-gap convection/conduction
+        self.gap_dissipation_w_m2 = 0.0   # Heat removed from the air gap by airflow
 
     def k_air(self, T_kelvin):
         """
@@ -35,6 +37,11 @@ class ThermalNetworkModel:
         """
         Iteratively solves the non-linear thermal resistance network.
         """
+        if self.gap_convection_factor <= 0:
+            raise ValueError("Air-gap convection factor must be greater than zero.")
+        if self.gap_dissipation_w_m2 < 0:
+            raise ValueError("Air-gap dissipation must be non-negative.")
+
         # Convert fixed boundaries to Kelvin
         T_hot = self.T_hot_C + 273.15
         T_inf = self.T_inf_C + 273.15
@@ -59,7 +66,7 @@ class ThermalNetworkModel:
             
             # A. Air Gap
             T_mean_gap = (T_hot + T1) / 2.0
-            R_gap_cond = self.L_gap / self.k_air(T_mean_gap)
+            R_gap_cond = self.L_gap / (self.k_air(T_mean_gap) * self.gap_convection_factor)
             
             h_gap_rad = self.sigma * self.eps_eff_gap * (T_hot**2 + T1**2) * (T_hot + T1)
             R_gap_rad = 1.0 / h_gap_rad if h_gap_rad > 0 else float('inf')
@@ -84,12 +91,13 @@ class ThermalNetworkModel:
             # Total equivalent resistance
             R_total = R_eq_gap + R_plate + R_eq_back
             
-            # 1D Heat Flux (W/m^2)
-            q_flux = (T_hot - T_inf) / R_total
+            # Source-side heat flux with assumed air-flow removal in the gap
+            q_flux = (T_hot - T_inf + self.gap_dissipation_w_m2 * (R_plate + R_eq_back)) / R_total
+            q_ambient = q_flux - self.gap_dissipation_w_m2
             
             # Calculate new temperatures based on voltage-drop analogy
             T1_new = T_hot - (q_flux * R_eq_gap)
-            T2_new = T1_new - (q_flux * R_plate)
+            T2_new = T1_new - (q_ambient * R_plate)
             
             # Apply relaxation to update temperatures smoothly
             T1 = (relaxation * T1_new) + ((1 - relaxation) * T1_old)
@@ -105,6 +113,8 @@ class ThermalNetworkModel:
         return {
             "iterations": iteration,
             "q_flux_W_m2": q_flux,
+            "q_ambient_W_m2": q_ambient,
+            "gap_dissipation_W_m2": self.gap_dissipation_w_m2,
             "T1_C": T1 - 273.15,
             "T2_C": T2 - 273.15,
             "R_eq_gap": R_eq_gap,

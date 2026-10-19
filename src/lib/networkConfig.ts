@@ -31,6 +31,7 @@ export interface LayerState {
 export interface InterfaceState {
 	type: InterfaceType;
 	gapThicknessMm: number;
+	dissipationWm2: number;
 	adhesiveThicknessMm: number;
 	adhesiveConductivityWmK: number;
 	contactResistanceM2KW: number;
@@ -52,6 +53,7 @@ export interface NetworkState {
 	foilEmissivity: number;
 	airFitIntercept: number;
 	airFitSlope: number;
+	gapConvectionFactor: number;
 	toleranceK: number;
 	maxIterations: number;
 	relaxation: number;
@@ -85,6 +87,7 @@ export const ADVANCED_DEFAULTS = {
 	foilEmissivity: 0.05,
 	airFitIntercept: 0.0243,
 	airFitSlope: 7.7e-5,
+	gapConvectionFactor: 1,
 	toleranceK: 1e-4,
 	maxIterations: 1000,
 	relaxation: 0.5,
@@ -262,6 +265,7 @@ export function createInterface(
 	return {
 		type,
 		gapThicknessMm: 5,
+		dissipationWm2: 0,
 		adhesiveThicknessMm: 0.1,
 		adhesiveConductivityWmK: 0.3,
 		contactResistanceM2KW: 0.001,
@@ -307,6 +311,48 @@ const TWO_LAYER_TEMPLATE: NetworkTemplate = {
 	],
 };
 
+const SETUP_ONE_TEMPLATE: NetworkTemplate = {
+	id: 'setup-1',
+	name: 'Setup1',
+	description:
+		'800 °C source → 20 mm air gap → 1 mm aluminium (foil front) → 20 mm air gap → 1 mm aluminium (foil front) → adhesive → 5 mm Nomex honeycomb → adhesive → 2 mm carbon fibre → ambient.',
+	sourceTemperatureC: 800,
+	ambientTemperatureC: 30,
+	sourceBareEmissivity: SOURCE_BARE_EMISSIVITY,
+	sourceSurface: surface('bare', 0.9),
+	backConvectionWm2K: 5,
+	layers: [
+		createLayer('aluminium', {
+			id: 'setup-1-aluminium-1',
+			label: 'Aluminium sheet 1',
+			thicknessMm: 1,
+			frontSurface: surface('foil', 0.05),
+		}),
+		createLayer('aluminium', {
+			id: 'setup-1-aluminium-2',
+			label: 'Aluminium sheet 2',
+			thicknessMm: 1,
+			frontSurface: surface('foil', 0.05),
+		}),
+		createLayer('nomex', {
+			id: 'setup-1-nomex',
+			label: 'Nomex honeycomb',
+			thicknessMm: 5,
+		}),
+		createLayer('carbon-fibre', {
+			id: 'setup-1-carbon-fibre',
+			label: 'Carbon fibre plate',
+			thicknessMm: 2,
+		}),
+	],
+	interfaces: [
+		createInterface('air-gap', { gapThicknessMm: 20 }),
+		createInterface('air-gap', { gapThicknessMm: 20 }),
+		createInterface('adhesive'),
+		createInterface('adhesive'),
+	],
+};
+
 const SOURCE_MODEL_TEMPLATE: NetworkTemplate = {
 	id: 'source-model',
 	name: 'Source model · 1 layer',
@@ -330,6 +376,7 @@ const SOURCE_MODEL_TEMPLATE: NetworkTemplate = {
 
 export const NETWORK_TEMPLATES: ReadonlyArray<NetworkTemplate> = [
 	TWO_LAYER_TEMPLATE,
+	SETUP_ONE_TEMPLATE,
 	SOURCE_MODEL_TEMPLATE,
 ];
 
@@ -408,6 +455,7 @@ export function buildNetworkInputs(state: NetworkState): NetworkInputs {
 		interfaces: state.interfaces.map((networkInterface) => ({
 			type: networkInterface.type,
 			gapThicknessM: networkInterface.gapThicknessMm / 1000,
+			dissipationWm2: networkInterface.dissipationWm2,
 			adhesiveThicknessM: networkInterface.adhesiveThicknessMm / 1000,
 			adhesiveConductivityWmK: networkInterface.adhesiveConductivityWmK,
 			contactResistanceM2KW: networkInterface.contactResistanceM2KW,
@@ -415,6 +463,7 @@ export function buildNetworkInputs(state: NetworkState): NetworkInputs {
 		backConvectionWm2K: state.backConvectionWm2K,
 		airFitIntercept: state.airFitIntercept,
 		airFitSlope: state.airFitSlope,
+		gapConvectionFactor: state.gapConvectionFactor,
 		toleranceK: state.toleranceK,
 		maxIterations: state.maxIterations,
 		relaxation: state.relaxation,
@@ -521,6 +570,12 @@ export function validateNetworkState(state: NetworkState): ValidationIssue[] {
 					message: 'Air-gap thickness must be greater than zero.',
 				});
 			}
+			if (!finite(networkInterface.dissipationWm2) || networkInterface.dissipationWm2 < 0) {
+				issues.push({
+					path: `${prefix}.dissipationWm2`,
+					message: 'Air-flow dissipation must be zero or greater.',
+				});
+			}
 		}
 		if (networkInterface.type === 'adhesive') {
 			if (!finite(networkInterface.adhesiveThicknessMm) || networkInterface.adhesiveThicknessMm <= 0) {
@@ -565,6 +620,13 @@ export function validateNetworkState(state: NetworkState): ValidationIssue[] {
 
 	if (!finite(state.airFitSlope) || state.airFitSlope < 0) {
 		issues.push({ path: 'airFitSlope', message: 'Air-fit slope cannot be negative.' });
+	}
+
+	if (!finite(state.gapConvectionFactor) || state.gapConvectionFactor <= 0) {
+		issues.push({
+			path: 'gapConvectionFactor',
+			message: 'Air-gap convection factor must be greater than zero.',
+		});
 	}
 
 	if (state.modelMode === 'steady') {

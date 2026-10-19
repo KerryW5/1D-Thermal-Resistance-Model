@@ -47,12 +47,14 @@ class Connection:
         self,
         kind="bonded",
         gap_thickness=0.005,
+        dissipation_w_m2=0.0,
         adhesive_thickness=0.0001,
         adhesive_conductivity=0.3,
         contact_resistance=0.001,
     ):
         self.kind = kind
         self.gap_thickness = gap_thickness
+        self.dissipation_w_m2 = dissipation_w_m2
         self.adhesive_thickness = adhesive_thickness
         self.adhesive_conductivity = adhesive_conductivity
         self.contact_resistance = contact_resistance
@@ -65,6 +67,7 @@ class Connection:
         downstream_emissivity,
         air_fit_intercept,
         air_fit_slope,
+        gap_convection_factor=1.0,
     ):
         if self.kind == "bonded":
             return {"type": self.kind, "resistance": 0.0}
@@ -78,7 +81,8 @@ class Connection:
 
         gap_mean_k = (upstream_k + downstream_k) / 2.0
         conductivity = air_fit_intercept + air_fit_slope * (gap_mean_k - KELVIN_OFFSET)
-        conduction_resistance = self.gap_thickness / conductivity
+        effective_conductivity = conductivity * gap_convection_factor
+        conduction_resistance = self.gap_thickness / effective_conductivity
         gap_emissivity = 1.0 / (
             1.0 / upstream_emissivity + 1.0 / downstream_emissivity - 1.0
         )
@@ -97,6 +101,8 @@ class Connection:
             "resistance": resistance,
             "gap_mean_k": gap_mean_k,
             "conductivity": conductivity,
+            "gap_convection_factor": gap_convection_factor,
+            "dissipation_w_m2": self.dissipation_w_m2,
             "conduction_resistance": conduction_resistance,
             "radiation_resistance": radiation_resistance,
             "effective_emissivity": gap_emissivity,
@@ -135,6 +141,7 @@ class TransientThermalNetwork:
         self.back_convection = 5.0
         self.air_fit_intercept = 0.0243
         self.air_fit_slope = 7.7e-5
+        self.gap_convection_factor = 1.0
         self.initial_temperature_c = 30.0
         self.time_step_s = 5.0
         self.final_time_s = 60.0
@@ -160,6 +167,7 @@ class TransientThermalNetwork:
                 downstream_emissivity,
                 self.air_fit_intercept,
                 self.air_fit_slope,
+                self.gap_convection_factor,
             )
             detail["upstream_k"] = upstream_k
             detail["downstream_k"] = downstream_k
@@ -251,6 +259,10 @@ class TransientThermalNetwork:
             raise ValueError("Time step and final time must be positive.")
         if len(self.connections) != len(self.layers):
             raise ValueError("Each layer must have one incoming connection.")
+        if self.gap_convection_factor <= 0:
+            raise ValueError("Air-gap convection factor must be greater than zero.")
+        if any(connection.dissipation_w_m2 < 0 for connection in self.connections):
+            raise ValueError("Air-gap dissipation must be non-negative.")
 
         source_k = self.source_temperature_c + KELVIN_OFFSET
         ambient_k = self.ambient_temperature_c + KELVIN_OFFSET
@@ -302,6 +314,10 @@ class TransientThermalNetwork:
                     upper[index] = -right_conductance
                 else:
                     rhs[index] += right_conductance * ambient_k
+
+            for index, connection in enumerate(self.connections):
+                if connection.kind == "air-gap" and connection.dissipation_w_m2 != 0:
+                    rhs[2 * index] -= connection.dissipation_w_m2
 
             node_temperatures_k = self._solve_tridiagonal(
                 lower, diagonal, upper, rhs
